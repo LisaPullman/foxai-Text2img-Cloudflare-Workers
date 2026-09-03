@@ -1,898 +1,1038 @@
 <!DOCTYPE html>
-<html lang="zh" class="light">
+<html lang="zh">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>基于 CloudFlare 的在线文生图服务</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
-    <link rel="icon" type="image/x-icon" href="https://cdn.jsdelivr.net/gh/huarzone/Text2img-Cloudflare-Workers@main/public/favicon.ico">
-    <style>
-        :root {
-            --primary: #5046e5;
-            --primary-light: #6e67eb;
-            --primary-dark: #4338ca;
-            --secondary: #f0f4f8;
-            --text: #1a202c;
-            --text-light: #4a5568;
-            --background: #ffffff;
-            --card-bg: #f7fafc;
-            --border: #e2e8f0;
-            --success: #10b981;
-            --error: #ef4444;
-            --warning: #f59e0b;
-            --info: #3b82f6;
-        }
-        
-        .dark {
-            --primary: #6e67eb;
-            --primary-light: #8a84ee;
-            --primary-dark: #5046e5;
-            --secondary: #2d3748;
-            --text: #f7fafc;
-            --text-light: #cbd5e0;
-            --background: #111827;
-            --card-bg: #1f2937;
-            --border: #374151;
-            --success: #10b981;
-            --error: #ef4444;
-            --warning: #f59e0b;
-            --info: #3b82f6;
-        }
-        
-        body {
-            background-color: var(--background);
-            color: var(--text);
-            transition: background-color 0.3s ease, color 0.3s ease;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        }
-        
-        .btn {
-            padding: 1rem 1.5rem;
-            border-radius: 0.375rem;
-            transition: all 0.3s;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="app-version" content="2026.09.03-3">
+<title>foxai · 免费在线文生图</title>
+<script>
+/* 主题初始化：必须在样式表加载前执行，避免深色用户看到亮色闪烁 */
+(function () {
+  try {
+    if (localStorage.theme === 'dark' ||
+        (!('theme' in localStorage) && matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    }
+  } catch (e) { /* 隐私模式下 localStorage 可能不可用 */ }
+})();
+</script>
+<!-- foxai Tile favicon（LOGO 规范：固定 Light Ember 底 + 反白 Mark） -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='14'%20fill='%23E2571F'/%3E%3Cg%20fill='none'%20stroke='%23FFFFFF'%20stroke-width='7.5'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M23%2055V22c0-7.2%205.8-13%2013-13h2'/%3E%3Cpath%20d='M12.5%2031h21'/%3E%3C/g%3E%3Ccircle%20cx='49'%20cy='9'%20r='5.5'%20fill='%23FFFFFF'/%3E%3C/svg%3E">
+<style>
+/* ===================== 设计令牌（foxai 品牌规范，Light/Dark 双值） ===================== */
+:root {
+  --brand: #E2571F;                       /* Ember (light) */
+  --brand-foreground: #FFFFFF;
+  --brand-muted: rgba(226, 87, 31, 0.12);
+  --brand-ring: rgba(226, 87, 31, 0.35);
 
-        .btn:focus {
-            outline: none;
-        }
-        
-        .btn-primary {
-            background-color: var(--primary);
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background-color: var(--primary-light);
-            transform: translateY(-1px);
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        }
-        
-        .btn-primary:active {
-            background-color: var(--primary-dark);
-            transform: translateY(0);
-        }
-        
-        .btn-secondary {
-            background-color: var(--secondary);
-            color: var(--text);
-            border: 1px solid var(--border);
-        }
-        
-        .btn-secondary:hover {
-            background-color: var(--border);
-            transform: translateY(-1px);
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        }
-        
-        .btn-secondary:active {
-            transform: translateY(0);
-        }
-        
-        .card {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border);
-            border-radius: 0.5rem;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-            transition: all 0.3s ease;
-        }
-        
-        .card:hover {
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-        }
-        
-        input, select, textarea {
-            background-color: var(--background);
-            color: var(--text);
-            border: 1px solid var(--border);
-            border-radius: 0.375rem;
-            padding: 0.5rem 0.75rem;
-            transition: all 0.3s ease;
-            width: 100%;
-        }
-        
-        input:focus, select:focus, textarea:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(80, 70, 229, 0.1);
-        }
-        
-        .slider {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 100%;
-            height: 6px;
-            border-radius: 5px;
-            background: var(--border);
-            outline: none;
-            margin: 10px 0;
-        }
-        
-        .slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            background: var(--primary);
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        
-        .slider::-webkit-slider-thumb:hover {
-            transform: scale(1.2);
-            box-shadow: 0 0 0 3px rgba(80, 70, 229, 0.2);
-        }
-        
-        .slider::-moz-range-thumb {
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            background: var(--primary);
-            cursor: pointer;
-            transition: all 0.2s ease;
-            border: none;
-        }
-        
-        .slider::-moz-range-thumb:hover {
-            transform: scale(1.2);
-            box-shadow: 0 0 0 3px rgba(80, 70, 229, 0.2);
-        }
+  --bg: #F6F7F8;
+  --surface: #FFFFFF;
+  --surface-2: #F1F2F4;
+  --border: #E3E5E9;
+  --text: #1A1D21;
+  --text-soft: #5C636B;
 
-        .animate-pulse {
-            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
+  --success: #0E9F6E;
+  --error: #DC2626;
+  --warning: #B45309;
+  --info: #2563EB;
+  --success-bg: rgba(14, 159, 110, 0.14);
+  --error-bg: rgba(220, 38, 38, 0.12);
+  --warning-bg: rgba(180, 83, 9, 0.14);
+  --info-bg: rgba(37, 99, 235, 0.12);
 
-        @keyframes pulse {
-            0%, 100% {
-                opacity: 1;
-            }
-            50% {
-                opacity: .5;
-            }
-        }
-        
-        .loading-mask {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background-color: rgba(0,0,0,0.6);
-            border-radius: 0.5rem;
-            z-index: 10;
-            backdrop-filter: blur(4px);
-        }
-        
-        .image-container {
-            aspect-ratio: 1 / 1;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background-color: var(--card-bg);
-            position: relative;
-            border-radius: 0.5rem;
-            max-height: 400px; /* 添加最大高度限制 */
-            margin: 0 auto; /* 居中显示 */
-            width: 100%; /* 保持宽度响应式 */
-        }
-        
-        #imageStatus {
-            position: absolute;
-            bottom: 1rem;
-            left: 1rem;
-            z-index: 20;
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.75rem;
-            font-weight: 500;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            transition: all 0.3s ease;
-        }
-        
-        .param-badge {
-            background-color: var(--secondary);
-            color: var(--text);
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.25rem;
-            font-size: 0.75rem;
-            margin-right: 0.5rem;
-            margin-bottom: 0.5rem;
-            display: inline-block;
-            border: 1px solid var(--border);
-        }
-        
-        .fade-in {
-            animation: fadeIn 0.5s ease-in-out;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        
-        .tooltip {
-            position: relative;
-            display: inline-block;
-        }
-        
-        .tooltip .tooltiptext {
-            visibility: hidden;
-            width: 200px;
-            background-color: var(--card-bg);
-            color: var(--text);
-            text-align: center;
-            border-radius: 6px;
-            padding: 8px;
-            position: absolute;
-            z-index: 1;
-            bottom: 125%;
-            left: 50%;
-            margin-left: -100px;
-            opacity: 0;
-            transition: opacity 0.3s;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            border: 1px solid var(--border);
-            font-size: 0.75rem;
-        }
-        
-        .tooltip:hover .tooltiptext {
-            visibility: visible;
-            opacity: 1;
-        }
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-lg: 0 12px 32px -12px rgba(16, 24, 40, 0.18);
+  --radius: 12px;
+}
+.dark {
+  --brand: #FF7A4D;                       /* Ember (dark, lifted) */
+  --brand-foreground: #1A1A1A;
+  --brand-muted: rgba(255, 122, 77, 0.16);
+  --brand-ring: rgba(255, 122, 77, 0.45);
 
-        .hidden {
-            display: none !important;
-        }
+  --bg: #101214;
+  --surface: #191C1F;
+  --surface-2: #22262A;
+  --border: #2C3136;
+  --text: #EFF1F2;
+  --text-soft: #9AA1A9;
 
-        @media (max-width: 768px) {
-            .mobile-flex-col {
-                flex-direction: column;
-            }
-            
-            .container {
-                padding-left: 1rem;
-                padding-right: 1rem;
-            }
-            
-            .image-container {
-                max-height: 400px; /* 移动端适当减小最大高度 */
-            }
-        }
-        
-        @media (min-width: 1024px) {
-            .container {
-                max-width: 1200px;
-            }
-        }
-    </style>
+  --success: #3DD68C;
+  --error: #F28B82;
+  --warning: #FBBF24;
+  --info: #7EB3FF;
+  --success-bg: rgba(61, 214, 140, 0.14);
+  --error-bg: rgba(242, 139, 130, 0.14);
+  --warning-bg: rgba(251, 191, 36, 0.14);
+  --info-bg: rgba(126, 179, 255, 0.14);
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 32px -12px rgba(0, 0, 0, 0.6);
+}
+
+/* ===================== 基础 ===================== */
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  transition: background-color 0.25s ease, color 0.25s ease;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.icon { width: 16px; height: 16px; stroke: currentColor; stroke-width: 2; fill: none;
+  stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; flex-shrink: 0; }
+.hidden { display: none !important; }
+a { color: var(--brand); text-decoration: none; }
+
+/* ===================== 顶栏 ===================== */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  height: 56px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px;
+}
+/* foxai Lockup（LOGO 规范 §2.3：Mark 与 "ai" 同用品牌色，"fox" 中性墨色，600 字重，-0.01em） */
+.lockup { display: inline-flex; align-items: center; gap: 8px; }
+.lockup svg { width: 26px; height: 26px; }
+.lockup .word { font-weight: 600; letter-spacing: -0.01em; font-size: 16px; line-height: 1; color: var(--text); }
+.lockup .word .ai { color: var(--brand); }
+.topbar-sub { color: var(--text-soft); font-size: 13px; margin-left: 10px; padding-left: 12px;
+  border-left: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+
+/* ===================== 布局 ===================== */
+.layout {
+  flex: 1; width: 100%; max-width: 1400px;
+  margin: 0 auto; padding: 20px;
+  display: flex; gap: 20px; align-items: flex-start;
+}
+.composer { width: 400px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; }
+.stage-col { flex: 1; min-width: 0; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+.card-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: var(--text-soft);
+  text-transform: uppercase; letter-spacing: 0.03em;
+  margin: 0 0 10px;
+}
+.card-title .icon { width: 14px; height: 14px; color: var(--brand); }
+.card-title .spacer { flex: 1; }
+
+/* ===================== 表单控件 ===================== */
+textarea, select, input {
+  width: 100%;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.25s ease;
+}
+textarea { resize: vertical; min-height: 96px; }
+textarea:focus, select:focus, input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+.field { margin-bottom: 14px; }
+.field:last-child { margin-bottom: 0; }
+.field-label {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; font-weight: 600; margin-bottom: 6px;
+}
+.field-label .icon { width: 13px; height: 13px; margin-right: 4px; color: var(--text-soft); }
+.hint { font-size: 12px; color: var(--text-soft); margin-top: 4px; }
+
+/* 滑块 */
+.slider-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+.slider-value { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--text-soft);
+  background: var(--surface-2); border-radius: 6px; padding: 1px 8px; }
+.slider {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 5px; border-radius: 5px;
+  background: var(--border); outline: none; margin: 10px 0;
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--brand); cursor: pointer; border: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.slider::-webkit-slider-thumb:hover { transform: scale(1.2); box-shadow: 0 0 0 4px var(--brand-ring); }
+.slider::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--brand); cursor: pointer; border: none;
+}
+.slider::-moz-range-thumb:hover { transform: scale(1.2); box-shadow: 0 0 0 4px var(--brand-ring); }
+
+/* 按钮 */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text);
+  font: inherit; font-weight: 500;
+  padding: 7px 12px; cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn:hover { background: var(--surface-2); }
+.btn:focus-visible { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); }
+.btn-icon { width: 34px; height: 34px; padding: 0; }
+.btn-soft { background: var(--brand-muted); color: var(--brand); border-color: transparent; }
+.btn-soft:hover { background: var(--brand-muted); filter: brightness(1.08); }
+/* 主按钮（LOGO 规范：底 --brand 字 --brand-foreground，hover brightness(1.1)，无渐变） */
+.btn-primary {
+  background: var(--brand); color: var(--brand-foreground);
+  border: none; border-radius: 10px;
+  font-size: 15px; font-weight: 600;
+  padding: 13px 20px; width: 100%;
+  box-shadow: 0 4px 14px -4px var(--brand-ring);
+}
+.btn-primary:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); }
+.btn-primary:active:not(:disabled) { transform: translateY(0); filter: brightness(0.98); }
+.btn-primary:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+.btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--brand-ring); }
+
+/* 模型信息与能力标签 */
+.model-info { margin-top: 8px; font-size: 12.5px; color: var(--text-soft); }
+.cap-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.cap-chip {
+  font-size: 11.5px; color: var(--text-soft);
+  background: var(--surface-2); border-radius: 999px; padding: 2px 9px;
+}
+.cap-chip.brand { color: var(--brand); background: var(--brand-muted); }
+
+/* 画面比例选择（FLUX.2 [dev]） */
+.ratio-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.ratio-btn {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-soft);
+  border-radius: 8px; padding: 5px 12px; font: inherit; font-size: 13px;
+  cursor: pointer; transition: all 0.15s ease;
+}
+.ratio-btn:hover { border-color: var(--brand); color: var(--brand); }
+.ratio-btn.active { background: var(--brand); border-color: var(--brand); color: var(--brand-foreground); font-weight: 600; }
+
+/* 高级选项折叠 */
+.adv-toggle { width: 100%; justify-content: space-between; }
+.adv-toggle .icon.chevron { transition: transform 0.2s ease; }
+.adv-toggle.open .icon.chevron { transform: rotate(180deg); }
+.adv-body { margin-top: 14px; border-top: 1px dashed var(--border); padding-top: 14px; }
+
+/* 生成快捷键提示 */
+.kbd-hint { text-align: center; font-size: 12px; color: var(--text-soft); margin-top: 8px; }
+.kbd-hint kbd {
+  background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px;
+  border-radius: 5px; padding: 0 5px; font-size: 11px; font-family: inherit;
+}
+
+/* ===================== 结果画布 ===================== */
+.stage-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.stage-actions { display: flex; gap: 8px; }
+.stage {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  min-height: 480px;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  padding: 16px;
+}
+.stage-empty { text-align: center; color: var(--text-soft); user-select: none; }
+.stage-empty svg.mark { width: 88px; height: 88px; opacity: 0.22; margin-bottom: 12px; }
+.stage-empty p { margin: 4px 0; font-size: 13.5px; }
+#aiImage { max-width: 100%; max-height: 100%; border-radius: 8px; box-shadow: var(--shadow-lg); }
+
+/* 加载遮罩 */
+.loading-mask {
+  position: absolute; inset: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  backdrop-filter: blur(5px);
+}
+.spinner {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid var(--brand-muted); border-top-color: var(--brand);
+  animation: spin 0.8s linear infinite; margin: 0 auto 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { text-align: center; font-weight: 500; }
+.loading-text .elapsed { font-size: 12.5px; color: var(--text-soft); margin-top: 2px;
+  font-variant-numeric: tabular-nums; }
+
+/* 状态徽章（半透明底色，双主题自适应） */
+#imageStatus {
+  position: absolute; bottom: 14px; left: 14px; z-index: 20;
+  padding: 4px 12px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 500;
+  box-shadow: var(--shadow);
+  transition: all 0.3s ease;
+}
+.status-success { background: var(--success-bg); color: var(--success); }
+.status-error   { background: var(--error-bg);   color: var(--error); }
+.status-warning { background: var(--warning-bg); color: var(--warning); }
+.status-info    { background: var(--info-bg);    color: var(--info); }
+
+/* 结果元信息 */
+.meta-row {
+  display: flex; flex-wrap: wrap; gap: 8px 24px;
+  margin-top: 14px; font-size: 13px; color: var(--text-soft);
+}
+.meta-row .icon { width: 13px; height: 13px; margin-right: 4px; }
+.meta-row b { color: var(--text); font-weight: 600; }
+
+/* 参数徽章 */
+.param-badge {
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text);
+  padding: 3px 10px; border-radius: 6px;
+  font-size: 12px; display: inline-block;
+}
+.param-badge b { font-weight: 600; color: var(--text-soft); margin-right: 2px; }
+
+/* ===================== 页脚 ===================== */
+.footer {
+  text-align: center; color: var(--text-soft); font-size: 12.5px;
+  padding: 18px 20px 22px;
+}
+.footer a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.footer a:hover { color: var(--brand); }
+
+/* ===================== 响应式 ===================== */
+@media (max-width: 960px) {
+  .layout { flex-direction: column; padding: 14px; }
+  .composer { width: 100%; }
+  .stage { min-height: 360px; }
+  .topbar { padding: 0 14px; }
+  .topbar-sub { display: none; }
+}
+</style>
 </head>
-<body class="min-h-screen py-4">
-    <div class="container mx-auto px-4 py-4 max-w-6xl">
-        <div class="flex items-center justify-between mb-6">
-            <h1 class="text-2xl md:text-3xl font-bold flex items-center">
-                🐳&nbsp;在线文生图服务
-            </h1>
-            <div class="flex items-center space-x-2">
-                <button id="themeToggle" class="btn btn-secondary p-2 h-10 w-10 flex items-center justify-center" aria-label="切换暗色主题">
-                    <i class="fa-solid fa-moon"></i>
-                </button>
-                <button id="github" class="btn btn-secondary p-2 h-10 w-10 flex items-center justify-center" aria-label="项目地址" onclick="window.open('https://github.com/huarzone/Text2img-Cloudflare-Workers', '_blank')">
-                    <i class="fa-brands fa-github"></i>
-                </button>
-            </div>
+<body>
+
+<!-- 内联 SVG 图标库（Feather 风格，MIT License） -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></symbol>
+  <symbol id="i-github" viewBox="0 0 24 24"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/></symbol>
+  <symbol id="i-seed" viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></symbol>
+</svg>
+
+<!-- 顶栏 -->
+<header class="topbar">
+  <div style="display:flex;align-items:center;min-width:0;">
+    <!-- foxai Lockup（严格遵循 LOGO.html §2.3 定稿） -->
+    <span class="lockup" aria-label="foxai">
+      <svg viewBox="0 0 64 64" role="img" aria-hidden="true">
+        <g fill="none" stroke="var(--brand)" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 55V22c0-7.2 5.8-13 13-13h2"/>
+          <path d="M12.5 31h21"/>
+        </g>
+        <circle cx="49" cy="9" r="5.5" fill="var(--brand)"/>
+      </svg>
+      <span class="word">fox<span class="ai">ai</span></span>
+    </span>
+    <span class="topbar-sub">免费在线文生图 · Cloudflare Workers AI</span>
+  </div>
+  <div class="topbar-actions">
+    <button id="themeToggle" class="btn btn-icon" aria-label="切换暗色主题" title="切换主题">
+      <svg class="icon" id="themeIcon"><use href="#i-moon"/></svg>
+    </button>
+    <button id="githubBtn" class="btn btn-icon" aria-label="项目地址" title="GitHub 项目"
+            onclick="window.open('https://github.com/LisaPullman/foxai-Text2img-Cloudflare-Workers', '_blank')">
+      <svg class="icon"><use href="#i-github"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- 左侧：创作面板 -->
+  <div class="composer">
+    <section class="card">
+      <h2 class="card-title"><svg class="icon"><use href="#i-cpu"/></svg>模型</h2>
+      <select id="model" aria-label="选择文生图模型">
+        <option value="" disabled selected>加载中…</option>
+      </select>
+      <div class="model-info" id="modelInfo"></div>
+      <div class="cap-chips" id="capChips"></div>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title"><svg class="icon"><use href="#i-zap"/></svg>提示词</h2>
+
+      <div class="field">
+        <div class="field-label">
+          <label for="prompt" style="display:flex;align-items:center;">
+            <svg class="icon"><use href="#i-edit"/></svg>正向提示词
+          </label>
+          <button id="randomButton" class="btn btn-soft" style="font-size:12px;padding:3px 10px;">
+            <svg class="icon" style="width:12px;height:12px;"><use href="#i-shuffle"/></svg> 随机灵感
+          </button>
+        </div>
+        <textarea id="prompt" rows="4" placeholder="描述你想要生成的图像内容及风格，支持中英文…"></textarea>
+      </div>
+
+      <div class="field" id="negativePromptGroup">
+        <div class="field-label">
+          <label for="negative_prompt" style="display:flex;align-items:center;">
+            <svg class="icon"><use href="#i-ban"/></svg>反向提示词
+          </label>
+        </div>
+        <textarea id="negative_prompt" rows="2" placeholder="不想出现在图像中的元素（该模型不支持时隐藏）"></textarea>
+      </div>
+    </section>
+
+    <section class="card">
+      <button id="toggleAdvanced" class="btn adv-toggle" aria-expanded="false">
+        <span style="display:flex;align-items:center;gap:6px;">
+          <svg class="icon"><use href="#i-sliders"/></svg>高级选项
+        </span>
+        <svg class="icon chevron"><use href="#i-chevron"/></svg>
+      </button>
+
+      <div id="advancedOptions" class="adv-body hidden">
+        <div class="field" id="passwordGroup">
+          <div class="field-label">
+            <label for="password" style="display:flex;align-items:center;">
+              <svg class="icon"><use href="#i-lock"/></svg>访问密码
+            </label>
+          </div>
+          <input type="password" id="password" placeholder="私有部署时填写，留空则无需密码">
         </div>
 
-        <div class="flex flex-col lg:flex-row gap-6 mobile-flex-col">
-            <!-- 左侧控制面板 -->
-            <div class="w-full lg:w-2/5 space-y-4">
-                <div class="card p-4 space-y-4 fade-in">
-                    <div class="flex justify-between items-center">
-                        <h2 class="text-lg font-semibold flex items-center">
-                            <i class="fa-solid fa-sliders mr-2 text-primary"></i>
-                            基本设置
-                        </h2>
-                        <button id="randomButton" class="btn btn-secondary text-sm py-1 px-3 flex items-center">
-                            <i class="fa-solid fa-dice mr-1"></i> 随机提示词
-                        </button>
-                    </div>
-                    
-                    <div>
-                        <label for="password" class="block text-sm font-medium mb-1 flex items-center">
-                            <i class="fa-solid fa-key mr-1 text-xs"></i> 访问密码
-                        </label>
-                        <input type="password" id="password" placeholder="请输入访问密码" class="w-full">
-                    </div>
-                    
-                    <div>
-                        <label for="prompt" class="block text-sm font-medium mb-1 flex items-center">
-                            <i class="fa-solid fa-wand-magic-sparkles mr-1 text-xs"></i> 正向提示词
-                        </label>
-                        <textarea id="prompt" rows="3" placeholder="描述您想要生成的图像内容及样式..." class="w-full">cyberpunk cat</textarea>
-                    </div>
-                    
-                    <div>
-                        <label for="negative_prompt" class="block text-sm font-medium mb-1 flex items-center">
-                            <i class="fa-solid fa-ban mr-1 text-xs"></i> 反向提示词
-                        </label>
-                        <textarea id="negative_prompt" rows="2" placeholder="描述在生成的图像中要避免的元素文本..." class="w-full"></textarea>
-                    </div>
-                    
-                    <div>
-                        <label for="model" class="block text-sm font-medium mb-1 flex items-center">
-                            <i class="fa-solid fa-robot mr-1 text-xs"></i> 文生图模型
-                        </label>
-                        <select id="model" class="w-full">
-                            <option value="loading" disabled selected>加载中...</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="card p-4 space-y-4 fade-in">
-                    <div class="flex justify-between items-center">
-                        <h2 class="text-lg font-semibold flex items-center">
-                            <i class="fa-solid fa-gear mr-2 text-primary"></i>
-                            高级选项
-                        </h2>
-                        <button id="toggleAdvanced" class="text-xs btn btn-secondary py-1 px-3 flex items-center">
-                            <i class="fa-solid fa-chevron-down mr-1" id="advancedIcon"></i> 显示/隐藏
-                        </button>
-                    </div>
-                    
-                    <div id="advancedOptions" class="space-y-3 hidden">
-                        <div>
-                            <div class="flex justify-between items-center">
-                                <label for="width" class="block text-sm font-medium flex items-center">
-                                    <i class="fa-solid fa-arrows-left-right mr-1 text-xs"></i> 图像宽度
-                                </label>
-                                <span id="widthValue" class="text-sm font-mono">1024px</span>
-                            </div>
-                            <input type="range" id="width" min="256" max="2048" step="64" value="1024" class="slider w-full">
-                        </div>
-                        
-                        <div>
-                            <div class="flex justify-between items-center">
-                                <label for="height" class="block text-sm font-medium flex items-center">
-                                    <i class="fa-solid fa-arrows-up-down mr-1 text-xs"></i> 图像高度
-                                </label>
-                                <span id="heightValue" class="text-sm font-mono">1024px</span>
-                            </div>
-                            <input type="range" id="height" min="256" max="2048" step="64" value="1024" class="slider w-full">
-                        </div>
-                        
-                        <div>
-                            <div class="flex justify-between items-center">
-                                <label for="num_steps" class="block text-sm font-medium flex items-center tooltip">
-                                    <i class="fa-solid fa-shoe-prints mr-1 text-xs"></i> 迭代步数
-                                    <span class="tooltiptext">更高的步数通常会产生更精细的细节，但需要更长的处理时间</span>
-                                </label>
-                                <span id="num_stepsValue" class="text-sm font-mono">20</span>
-                            </div>
-                            <input type="range" id="num_steps" min="1" max="20" step="1" value="20" class="slider w-full">
-                        </div>
-                        
-                        <div>
-                            <div class="flex justify-between items-center">
-                                <label for="guidance" class="block text-sm font-medium flex items-center tooltip">
-                                    <i class="fa-solid fa-compass mr-1 text-xs"></i> 引导系数
-                                    <span class="tooltiptext">控制生成图像与提示词的匹配程度，较高的值会更严格遵循提示词</span>
-                                </label>
-                                <span id="guidanceValue" class="text-sm font-mono">7.5</span>
-                            </div>
-                            <input type="range" id="guidance" min="0" max="30" step="0.5" value="7.5" class="slider w-full">
-                        </div>
-                        
-                        <div>
-                            <label for="seed" class="block text-sm font-medium mb-1 flex items-center tooltip">
-                                <i class="fa-solid fa-seedling mr-1 text-xs"></i> 随机种子
-                                <span class="tooltiptext">使用相同的种子值可以在其他参数相同的情况下生成相似的图像</span>
-                            </label>
-                            <div class="flex gap-2">
-                                <input type="number" id="seed" placeholder="随机种子值" class="w-full">
-                                <button id="randomSeed" class="btn btn-secondary text-sm py-1 px-3">
-                                    <i class="fa-solid fa-random"></i>
-                                </button>
-                            </div>
-                            <p class="text-xs text-gray-500 mt-1">留空则随机生成</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <button id="submitButton" class="btn btn-primary w-full py-3 flex items-center justify-center">
-                    <i class="fa-solid fa-wand-magic-sparkles mr-2"></i> 生成图像
-                </button>
-            </div>
-            
-            <!-- 右侧图像展示 -->
-            <div class="w-full lg:w-3/5">
-                <div class="card h-full p-4 space-y-4 fade-in">
-                    <div class="flex justify-between items-center">
-                        <h2 class="text-lg font-semibold flex items-center">
-                            <i class="fa-solid fa-image mr-2 text-primary"></i>
-                            生成结果
-                        </h2>
-                        <div class="flex space-x-2">
-                            <button id="copyParamsButton" class="btn btn-secondary text-sm py-1 px-3 hidden">
-                                <i class="fa-solid fa-copy mr-1"></i> 复制参数
-                            </button>
-                            <button id="downloadButton" class="btn btn-secondary text-sm py-1 px-3 hidden">
-                                <i class="fa-solid fa-download mr-1"></i> 下载图像
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="image-container card">
-                        <div id="loadingOverlay" class="loading-mask hidden">
-                            <div class="text-center">
-                                <div class="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
-                                <p class="text-white mt-3 font-medium">生成中，请稍候...</p>
-                                <p class="text-white text-sm mt-1">这可能需要几秒到几十秒不等</p>
-                            </div>
-                        </div>
-                        <div id="initialPrompt" class="text-center text-gray-400 dark:text-gray-600">
-                            <i class="fa-solid fa-image-portrait text-4xl mb-2"></i>
-                            <p>点击生成按钮开始创建图像</p>
-                        </div>
-                        <span id="imageStatus" class="bg-gray-300 text-gray-700 hidden">状态</span>
-                        <img id="aiImage" class="max-h-full max-w-full rounded hidden" alt="生成的图像">
-                    </div>
-                    
-                    <div id="imageInfo" class="space-y-3 mt-2">
-                        <div class="grid grid-cols-2 gap-3">
-                            <div class="text-sm flex items-center">
-                                <span class="font-medium flex items-center">
-                                    <i class="fa-regular fa-clock mr-1 text-xs"></i> 生成时间：
-                                </span>
-                                <span id="generationTime" class="ml-1">-</span>
-                            </div>
-                            <div class="text-sm flex items-center">
-                                <span class="font-medium flex items-center">
-                                    <i class="fa-solid fa-microchip mr-1 text-xs"></i> 使用模型：
-                                </span>
-                                <span id="usedModel" class="ml-1">-</span>
-                            </div>
-                        </div>
-                        
-                        <div id="allParamsContainer" class="hidden mt-3 border-t border-gray-200 dark:border-gray-700 pt-3">
-                            <h3 class="text-sm font-medium mb-2 flex items-center">
-                                <i class="fa-solid fa-list-check mr-1"></i> 所有参数
-                            </h3>
-                            <div id="allParams" class="flex flex-wrap"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <div class="field" id="widthGroup">
+          <div class="slider-row">
+            <label for="width" style="display:flex;align-items:center;">
+              <svg class="icon"><use href="#i-image"/></svg>图像宽度
+            </label>
+            <span class="slider-value" id="widthValue">1024px</span>
+          </div>
+          <input type="range" id="width" min="256" max="2048" step="64" value="1024" class="slider">
         </div>
+
+        <div class="field" id="heightGroup">
+          <div class="slider-row">
+            <label for="height" style="display:flex;align-items:center;">
+              <svg class="icon"><use href="#i-image"/></svg>图像高度
+            </label>
+            <span class="slider-value" id="heightValue">1024px</span>
+          </div>
+          <input type="range" id="height" min="256" max="2048" step="64" value="1024" class="slider">
+        </div>
+
+        <div class="field" id="aspectGroup">
+          <div class="field-label"><span>画面比例</span></div>
+          <div class="ratio-row" id="ratioRow"></div>
+          <p class="hint">该模型按比例出图，不支持自定义像素尺寸</p>
+        </div>
+
+        <div class="field" id="stepsGroup">
+          <div class="slider-row">
+            <label for="num_steps" style="display:flex;align-items:center;">
+              <svg class="icon"><use href="#i-refresh"/></svg>迭代步数
+            </label>
+            <span class="slider-value" id="num_stepsValue">20</span>
+          </div>
+          <input type="range" id="num_steps" min="1" max="20" step="1" value="20" class="slider">
+          <p class="hint">步数越高细节越丰富，但耗时更长</p>
+        </div>
+
+        <div class="field" id="guidanceGroup">
+          <div class="slider-row">
+            <label for="guidance" style="display:flex;align-items:center;">
+              <svg class="icon"><use href="#i-edit"/></svg>引导系数
+            </label>
+            <span class="slider-value" id="guidanceValue">7.5</span>
+          </div>
+          <input type="range" id="guidance" min="0" max="30" step="0.5" value="7.5" class="slider">
+          <p class="hint">越高越严格遵循提示词，过高可能画面失真</p>
+        </div>
+
+        <div class="field" id="seedGroup">
+          <div class="field-label">
+            <label for="seed" style="display:flex;align-items:center;">
+              <svg class="icon"><use href="#i-seed"/></svg>随机种子
+            </label>
+            <button id="randomSeed" class="btn btn-soft" style="font-size:12px;padding:3px 10px;" title="生成随机种子">
+              <svg class="icon" style="width:12px;height:12px;"><use href="#i-refresh"/></svg> 随机
+            </button>
+          </div>
+          <input type="number" id="seed" placeholder="留空则每次随机" min="0" step="1">
+          <p class="hint">相同种子 + 相同参数可复现相似图像</p>
+        </div>
+      </div>
+    </section>
+
+    <div>
+      <button id="submitButton" class="btn-primary">
+        <svg class="icon" id="submitIcon"><use href="#i-zap"/></svg>
+        <span id="submitText">生成图像</span>
+      </button>
+      <p class="kbd-hint">快捷键 <kbd>Ctrl</kbd> + <kbd>Enter</kbd> 快速生成</p>
+    </div>
+  </div>
+
+  <!-- 右侧：结果画布 -->
+  <div class="stage-col">
+    <div class="stage-head">
+      <h2 class="card-title" style="margin:0;"><svg class="icon"><use href="#i-image"/></svg>生成结果</h2>
+      <div class="stage-actions">
+        <button id="copyParamsButton" class="btn hidden">
+          <svg class="icon"><use href="#i-copy"/></svg> 复制参数
+        </button>
+        <button id="downloadButton" class="btn hidden">
+          <svg class="icon"><use href="#i-download"/></svg> 下载图像
+        </button>
+      </div>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            // 初始化模型列表
-            let availableModels = [];
-            let randomPromptsList = [];
-            let currentImageParams = {};
-            
-            // 加载模型列表
-            async function loadModels() {
-                try {
-                    const response = await fetch('/api/models');
-                    if (!response.ok) {
-                        throw new Error('加载模型列表失败');
-                    }
-                    
-                    availableModels = await response.json();
-                    const modelSelect = document.getElementById('model');
-                    
-                    // 清空当前选项
-                    modelSelect.innerHTML = '';
-                    
-                    // 添加新选项
-                    availableModels.forEach(model => {
-                        const option = document.createElement('option');
-                        option.value = model.id;
-                        option.textContent = `${model.name} - ${model.description}`;
-                        modelSelect.appendChild(option);
-                    });
-                    
-                    // 默认选择第二个模型（通常是更好的模型）
-                    if (availableModels.length > 1) {
-                        modelSelect.value = availableModels[1].id;
-                    }
-                } catch (error) {
-                    console.error('加载模型列表错误:', error);
-                    showStatus('加载模型列表失败', 'error');
-                }
-            }
-            
-            // 加载随机提示词
-            async function loadRandomPrompts() {
-                try {
-                    const response = await fetch('/api/prompts');
-                    if (!response.ok) {
-                        throw new Error('加载提示词失败');
-                    }
-                    
-                    randomPromptsList = await response.json();
-                } catch (error) {
-                    console.error('加载提示词错误:', error);
-                    randomPromptsList = ['未能加载提示词列表，请重试或手动输入'];
-                }
-            }
-            
-            // 初始化加载资源
-            loadModels();
-            loadRandomPrompts();
-            
-            // 主题切换功能相关代码
-            const themeToggle = document.getElementById('themeToggle');
-            const html = document.documentElement;
-            const moonIcon = `<i class="fa-solid fa-moon"></i>`;
-            const sunIcon = `<i class="fa-solid fa-sun"></i>`;
-            
-            // 检查系统主题或存储的主题并设置初始状态
-            if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                html.classList.add('dark');
-                themeToggle.innerHTML = sunIcon;
-                themeToggle.setAttribute('aria-label', '切换亮色主题');
-            } else {
-                html.classList.remove('dark');
-                themeToggle.innerHTML = moonIcon;
-                themeToggle.setAttribute('aria-label', '切换暗色主题');
-            }
-            
-            themeToggle.addEventListener('click', function() {
-                if (html.classList.contains('dark')) {
-                    html.classList.remove('dark');
-                    localStorage.theme = 'light';
-                    themeToggle.innerHTML = moonIcon;
-                    themeToggle.setAttribute('aria-label', '切换暗色主题');
-                } else {
-                    html.classList.add('dark');
-                    localStorage.theme = 'dark';
-                    themeToggle.innerHTML = sunIcon;
-                    themeToggle.setAttribute('aria-label', '切换亮色主题');
-                }
-            });
-            
-            // 高级选项切换
-            const toggleAdvanced = document.getElementById('toggleAdvanced');
-            const advancedOptions = document.getElementById('advancedOptions');
-            const advancedIcon = document.getElementById('advancedIcon');
-            
-            toggleAdvanced.addEventListener('click', function() {
-                if (advancedOptions.classList.contains('hidden')) {
-                    advancedOptions.classList.remove('hidden');
-                    advancedIcon.classList.remove('fa-chevron-down');
-                    advancedIcon.classList.add('fa-chevron-up');
-                } else {
-                    advancedOptions.classList.add('hidden');
-                    advancedIcon.classList.remove('fa-chevron-up');
-                    advancedIcon.classList.add('fa-chevron-down');
-                }
-            });
-            
-            // 滑块值显示
-            const sliders = ['width', 'height', 'num_steps', 'guidance'];
-            sliders.forEach(id => {
-                const slider = document.getElementById(id);
-                const valueDisplay = document.getElementById(`${id}Value`);
-                
-                slider.addEventListener('input', function() {
-                    if (id === 'width' || id === 'height') {
-                        valueDisplay.textContent = `${this.value}px`;
-                    } else if (id === 'guidance') {
-                        valueDisplay.textContent = parseFloat(this.value).toFixed(2);
-                    } else {
-                        valueDisplay.textContent = this.value;
-                    }
-                });
-            });
-            
-            // 随机种子
-            document.getElementById('randomSeed').addEventListener('click', function() {
-                const randomSeed = Math.floor(Math.random() * 4294967295);
-                document.getElementById('seed').value = randomSeed;
-            });
-            
-            // 随机提示词
-            document.getElementById('randomButton').addEventListener('click', function() {
-                if (randomPromptsList.length > 0) {
-                    const randomIndex = Math.floor(Math.random() * randomPromptsList.length);
-                    document.getElementById('prompt').value = randomPromptsList[randomIndex];
-                } else {
-                    showStatus('提示词列表未加载，请稍后再试', 'error');
-                }
-            });
-            
-            // 复制参数
-            document.getElementById('copyParamsButton').addEventListener('click', function() {
-                if (!currentImageParams) return;
-                
-                // 创建参数文本
-                let paramsText = '--- AI绘图创作生成参数 ---\n';
-                for (const [key, value] of Object.entries(currentImageParams)) {
-                    if (key === 'password') continue; // 不复制密码
-                    paramsText += `${formatParamName(key)}: ${value}\n`;
-                }
-                
-                // 复制到剪贴板
-                navigator.clipboard.writeText(paramsText)
-                    .then(() => {
-                        showStatus('参数已复制到剪贴板', 'success');
-                    })
-                    .catch(err => {
-                        console.error('复制失败:', err);
-                        showStatus('复制参数失败', 'error');
-                    });
-            });
-            
-            // 格式化参数名称
-            function formatParamName(name) {
-                const nameMap = {
-                    'prompt': '正向提示词',
-                    'negative_prompt': '反向提示词',
-                    'model': '文生图模型',
-                    'width': '图像宽度',
-                    'height': '图像高度',
-                    'num_steps': '迭代步数',
-                    'guidance': '引导系数',
-                    'seed': '随机种子'
-                };
-                return nameMap[name] || name;
-            }
-            
-            // 下载图像
-            document.getElementById('downloadButton').addEventListener('click', async function() {
-                const img = document.getElementById('aiImage');
-                if (!img.src) {
-                    showStatus('没有可下载的图像', 'error');
-                    return;
-                }
-                
-                try {
-                    // 从图像数据创建blob
-                    const response = await fetch(img.src);
-                    const blob = await response.blob();
-                    
-                    // 创建下载链接
-                    const url = window.URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = url;
-                    
-                    // 生成文件名
-                    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                    const model = document.getElementById('usedModel').textContent || 'ai-image';
-                    link.download = `${model}-${timestamp}.png`;
-                    
-                    // 触发下载
-                    document.body.appendChild(link);
-                    link.click();
-                    
-                    // 清理
-                    document.body.removeChild(link);
-                    window.URL.revokeObjectURL(url);
-                    
-                    showStatus('图像下载成功', 'success');
-                } catch (error) {
-                    console.error('下载图像错误:', error);
-                    showStatus('下载图像失败', 'error');
-                }
-            });
-            
-            // 提交生成请求
-            document.getElementById('submitButton').addEventListener('click', async function() {
-                // 显示加载中状态
-                const loadingOverlay = document.getElementById('loadingOverlay');
-                const initialPrompt = document.getElementById('initialPrompt');
-                const aiImage = document.getElementById('aiImage');
-                
-                if (!loadingOverlay || !initialPrompt || !aiImage) {
-                    console.error('必要的DOM元素未找到');
-                    return;
-                }
-                
-                // 隐藏初始提示和图像
-                initialPrompt.classList.add('hidden');
-                aiImage.classList.add('hidden');
-                loadingOverlay.classList.remove('hidden');
-                
-                // 隐藏之前的提示和按钮
-                const imageStatus = document.getElementById('imageStatus');
-                const copyParamsButton = document.getElementById('copyParamsButton');
-                const downloadButton = document.getElementById('downloadButton');
-                
-                if (imageStatus) imageStatus.classList.add('hidden');
-                if (copyParamsButton) copyParamsButton.classList.add('hidden');
-                if (downloadButton) downloadButton.classList.add('hidden');
-                
-                // 获取参数
-                const params = {
-                    password: document.getElementById('password')?.value || '',
-                    prompt: document.getElementById('prompt')?.value || '',
-                    negative_prompt: document.getElementById('negative_prompt')?.value || '',
-                    model: document.getElementById('model')?.value,
-                    width: parseInt(document.getElementById('width')?.value) || 1024,
-                    height: parseInt(document.getElementById('height')?.value) || 1024,
-                    num_steps: parseInt(document.getElementById('num_steps')?.value) || 20,
-                    guidance: parseFloat(document.getElementById('guidance')?.value) || 7.5,
-                    seed: parseInt(document.getElementById('seed')?.value) || Math.floor(Math.random() * 4294967295)
-                };
-                
-                // 保存当前参数
-                currentImageParams = {...params};
-                
-                try {
-                    // 发送请求
-                    const startTime = performance.now();
-                    const response = await fetch('/', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Accept': 'image/*'
-                        },
-                        body: JSON.stringify(params)
-                    });
-                    
-                    if (!response.ok) {
-                        const contentType = response.headers.get('content-type');
-                        if (contentType?.includes('application/json')) {
-                            const errorData = await response.json();
-                            throw new Error(errorData.message || '生成失败');
-                        } else {
-                            const errorText = await response.text();
-                            console.error('服务器错误:', errorText);
-                            throw new Error('生成失败');
-                        }
-                    }
-                    
-                    // 获取图像blob数据并转换为base64
-                    const imageBlob = await response.blob();
-                    const base64Image = await blobToBase64(imageBlob);
-                    const endTime = performance.now();
-                    const generationTime = ((endTime - startTime) / 1000).toFixed(2);
-                    
-                    // 设置图像信息并显示图像
-                    aiImage.src = base64Image;
-                    aiImage.onload = () => {
-                        // 图像加载完成后更新UI
-                        loadingOverlay.classList.add('hidden');
-                        aiImage.classList.remove('hidden');
-                        
-                        // 安全地更新信息显示
-                        const elements = {
-                            generationTime: document.getElementById('generationTime'),
-                            usedModel: document.getElementById('usedModel')
-                        };
-                        
-                        if (elements.generationTime) {
-                            elements.generationTime.textContent = `${generationTime}秒`;
-                        }
-                        if (elements.usedModel) {
-                            elements.usedModel.textContent = getModelNameById(params.model);
-                        }
-                        
-                        // 更新所有参数面板
-                        updateParamsDisplay(params);
-                        
-                        // 显示状态和操作按钮
-                        showStatus('生成成功', 'success');
-                        if (copyParamsButton) copyParamsButton.classList.remove('hidden');
-                        if (downloadButton) downloadButton.classList.remove('hidden');
-                    };
-                    
-                } catch (error) {
-                    console.error('生成图像错误:', error);
-                    showStatus(error.message || '生成失败', 'error');
-                    // 显示初始提示
-                    initialPrompt.classList.remove('hidden');
-                    aiImage.classList.add('hidden');
-                } finally {
-                    loadingOverlay.classList.add('hidden');
-                }
-            });
-            
-            // 将Blob转换为Base64
-            function blobToBase64(blob) {
-                return new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(blob);
-                });
-            }
-            
-            // 通过ID获取模型名称
-            function getModelNameById(id) {
-                const model = availableModels.find(m => m.id === id);
-                return model ? model.name : id;
-            }
-            
-            // 更新参数显示
-            function updateParamsDisplay(params) {
-                const allParamsContainer = document.getElementById('allParamsContainer');
-                const allParamsElement = document.getElementById('allParams');
-                
-                if (!allParamsContainer || !allParamsElement) return;
-                
-                // 清空现有参数
-                allParamsElement.innerHTML = '';
-                
-                // 添加新参数
-                for (const [key, value] of Object.entries(params)) {
-                    if (key === 'password') continue; // 不显示密码
-                    
-                    const paramName = formatParamName(key);
-                    const paramValue = value;
-                    
-                    // 创建参数徽章
-                    const badge = document.createElement('div');
-                    badge.className = 'param-badge';
-                    badge.innerHTML = `<span class="font-medium">${paramName}:</span> ${paramValue}`;
-                    
-                    allParamsElement.appendChild(badge);
-                }
-                
-                // 显示参数容器
-                allParamsContainer.classList.remove('hidden');
-            }
-            
-            // 显示状态提示
-            function showStatus(message, type = 'info') {
-                const statusElement = document.getElementById('imageStatus');
-                if (!statusElement) return;
-                
-                // 设置样式
-                statusElement.className = '';
-                switch (type) {
-                    case 'success':
-                        statusElement.classList.add('bg-green-100', 'text-green-800', 'dark:bg-green-900', 'dark:text-green-100');
-                        break;
-                    case 'error':
-                        statusElement.classList.add('bg-red-100', 'text-red-800', 'dark:bg-red-900', 'dark:text-red-100');
-                        break;
-                    case 'warning':
-                        statusElement.classList.add('bg-yellow-100', 'text-yellow-800', 'dark:bg-yellow-900', 'dark:text-yellow-100');
-                        break;
-                    default:
-                        statusElement.classList.add('bg-blue-100', 'text-blue-800', 'dark:bg-blue-900', 'dark:text-blue-100');
-                }
-                
-                // 设置消息
-                statusElement.textContent = message;
-                
-                // 显示
-                statusElement.classList.remove('hidden');
-                
-                // 5秒后自动隐藏
-                setTimeout(() => {
-                    statusElement.classList.add('hidden');
-                }, 5000);
-            }
+    <div class="stage">
+      <div id="emptyState" class="stage-empty">
+        <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+          <g fill="none" stroke="var(--brand)" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 55V22c0-7.2 5.8-13 13-13h2"/>
+            <path d="M12.5 31h21"/>
+          </g>
+          <circle cx="49" cy="9" r="5.5" fill="var(--brand)"/>
+        </svg>
+        <p>输入提示词，点击「生成图像」开始创作</p>
+        <p style="font-size:12px;">生成通常需要几秒到几十秒</p>
+      </div>
+
+      <img id="aiImage" class="hidden" alt="生成的图像">
+
+      <div id="loadingOverlay" class="loading-mask hidden">
+        <div>
+          <div class="spinner"></div>
+          <div class="loading-text">
+            正在生成，请稍候…
+            <div class="elapsed" id="elapsedTimer">已等待 0.0s</div>
+          </div>
+        </div>
+      </div>
+
+      <span id="imageStatus" class="hidden"></span>
+    </div>
+
+    <div class="meta-row hidden" id="metaRow">
+      <span><svg class="icon"><use href="#i-clock"/></svg>耗时 <b id="generationTime">-</b></span>
+      <span><svg class="icon"><use href="#i-cpu"/></svg>模型 <b id="usedModel">-</b></span>
+      <span id="imageMeta"></span>
+    </div>
+
+    <div class="hidden" id="allParamsContainer" style="margin-top:12px;">
+      <div class="card">
+        <div class="card-title" style="margin-bottom:8px;">本次生成参数</div>
+        <div id="allParams" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer class="footer">
+  Powered by <a href="https://developers.cloudflare.com/workers-ai/" target="_blank" rel="noopener">Cloudflare Workers AI</a>
+  · 免费额度内即可使用 ·
+  <a href="https://github.com/LisaPullman/foxai-Text2img-Cloudflare-Workers" target="_blank" rel="noopener">GitHub</a>
+  · <span style="opacity:.55">v2026.09.03-3</span>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  var availableModels = [];
+  var modelsById = {};
+  var currentModel = null;
+  var randomPromptsList = [];
+  var currentImageParams = {};
+  var isGenerating = false;
+  var lastBlob = null;
+  var lastObjectUrl = null;
+  var statusTimer = null;
+  var elapsedInterval = null;
+  var selectedRatio = '1:1';
+
+  var PREFS_KEY = 't2i:prefs';
+
+  // ============ 主题切换 ============
+  var themeToggle = $('themeToggle');
+  var themeIcon = $('themeIcon');
+
+  function syncThemeButton() {
+    var dark = document.documentElement.classList.contains('dark');
+    themeIcon.innerHTML = '<use href="#' + (dark ? 'i-sun' : 'i-moon') + '"/>';
+    themeToggle.setAttribute('aria-label', dark ? '切换亮色主题' : '切换暗色主题');
+  }
+
+  themeToggle.addEventListener('click', function () {
+    var dark = document.documentElement.classList.toggle('dark');
+    try { localStorage.theme = dark ? 'dark' : 'light'; } catch (e) {}
+    syncThemeButton();
+  });
+  syncThemeButton();
+
+  // ============ 偏好记忆 ============
+  function loadPrefs() {
+    try { return JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'); }
+    catch (e) { return {}; }
+  }
+  function savePrefs() {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify({
+        model: $('model').value,
+        prompt: $('prompt').value,
+        negativePrompt: $('negative_prompt').value,
+        width: $('width').value,
+        height: $('height').value,
+        num_steps: $('num_steps').value,
+        guidance: $('guidance').value,
+        seed: $('seed').value,
+        ratio: selectedRatio
+      }));
+    } catch (e) { /* 忽略存储异常 */ }
+  }
+
+  // ============ 状态提示 ============
+  function showStatus(message, type) {
+    var el = $('imageStatus');
+    if (!el) return;
+    el.className = 'status-' + (type || 'info');
+    el.textContent = message;
+    el.classList.remove('hidden');
+    if (statusTimer) clearTimeout(statusTimer);
+    statusTimer = setTimeout(function () { el.classList.add('hidden'); }, 5000);
+  }
+
+  // ============ 模型能力适配 ============
+  function capChipsFor(caps) {
+    var chips = [];
+    if (caps.size) chips.push({ t: '尺寸 ' + caps.size.min + '–' + caps.size.max + 'px', brand: false });
+    if (caps.aspectRatio) chips.push({ t: '多种画面比例', brand: false });
+    if (caps.negativePrompt) chips.push({ t: '反向提示词', brand: false });
+    if (caps.guidance) chips.push({ t: '引导系数 ' + caps.guidance.min + '–' + caps.guidance.max, brand: false });
+    if (caps.seed) chips.push({ t: '随机种子', brand: false });
+    if (caps.steps) chips.push({ t: '步数 ' + caps.steps.min + '–' + caps.steps.max, brand: false });
+    return chips;
+  }
+
+  function setSlider(slider, label, opts) {
+    // opts: {min, max, step, value, format}
+    var old = parseFloat(slider.value);
+    slider.min = opts.min; slider.max = opts.max; slider.step = opts.step;
+    var v = Number.isFinite(old) ? Math.min(opts.max, Math.max(opts.min, old)) : opts.value;
+    if (opts.reset) v = opts.value;
+    slider.value = v;
+    if (label) label.textContent = opts.format(v);
+  }
+
+  function fmtPx(v) { return v + 'px'; }
+  function fmtNum(v) { return String(v); }
+  function fmtGuidance(v) { return parseFloat(v).toFixed(1); }
+
+  function applyModelCapabilities(model, opts) {
+    var caps = model.capabilities || {};
+    currentModel = model;
+
+    // 模型信息与能力标签
+    $('modelInfo').textContent = model.description || '';
+    $('capChips').innerHTML = capChipsFor(caps).map(function (c) {
+      return '<span class="cap-chip' + (c.brand ? ' brand' : '') + '">' + c.t + '</span>';
+    }).join('');
+
+    // 分组显隐
+    $('negativePromptGroup').classList.toggle('hidden', !caps.negativePrompt);
+    var sizeOn = !!caps.size;
+    $('widthGroup').classList.toggle('hidden', !sizeOn);
+    $('heightGroup').classList.toggle('hidden', !sizeOn);
+    $('aspectGroup').classList.toggle('hidden', !caps.aspectRatio);
+    $('guidanceGroup').classList.toggle('hidden', !caps.guidance);
+    $('seedGroup').classList.toggle('hidden', !caps.seed);
+
+    // 尺寸滑块
+    if (caps.size) {
+      setSlider($('width'), $('widthValue'), {
+        min: caps.size.min, max: caps.size.max, step: caps.size.step || 8,
+        value: caps.size.defaultWidth, reset: !!opts.reset, format: fmtPx });
+      setSlider($('height'), $('heightValue'), {
+        min: caps.size.min, max: caps.size.max, step: caps.size.step || 8,
+        value: caps.size.defaultHeight, reset: !!opts.reset, format: fmtPx });
+    }
+
+    // 步数滑块
+    if (caps.steps) {
+      $('stepsGroup').classList.remove('hidden');
+      setSlider($('num_steps'), $('num_stepsValue'), {
+        min: caps.steps.min, max: caps.steps.max, step: 1,
+        value: caps.steps.default, reset: !!opts.reset, format: fmtNum });
+    } else {
+      $('stepsGroup').classList.add('hidden');
+    }
+
+    // 引导系数滑块
+    if (caps.guidance) {
+      setSlider($('guidance'), $('guidanceValue'), {
+        min: caps.guidance.min, max: caps.guidance.max, step: 0.5,
+        value: caps.guidance.default, reset: !!opts.reset, format: fmtGuidance });
+    }
+
+    // 画面比例按钮
+    if (caps.aspectRatio) {
+      var row = $('ratioRow');
+      row.innerHTML = '';
+      caps.aspectRatio.forEach(function (r) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'ratio-btn' + (r === selectedRatio ? ' active' : '');
+        b.textContent = r;
+        b.addEventListener('click', function () {
+          selectedRatio = r;
+          row.querySelectorAll('.ratio-btn').forEach(function (x) { x.classList.remove('active'); });
+          b.classList.add('active');
+          savePrefs();
         });
-    </script>
+        row.appendChild(b);
+      });
+      if (!caps.aspectRatio.includes(selectedRatio)) {
+        selectedRatio = caps.aspectRatio[0];
+        var first = row.querySelector('.ratio-btn');
+        if (first) first.classList.add('active');
+      }
+    }
+  }
+
+  // ============ 模型列表加载 ============
+  async function loadModels() {
+    try {
+      var response = await fetch('/api/models');
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      availableModels = await response.json();
+      modelsById = {};
+      availableModels.forEach(function (m) { modelsById[m.id] = m; });
+
+      var modelSelect = $('model');
+      modelSelect.innerHTML = '';
+      availableModels.forEach(function (m) {
+        var option = document.createElement('option');
+        option.value = m.id;
+        option.textContent = m.name;
+        modelSelect.appendChild(option);
+      });
+
+      // 默认选中：记住的偏好 > default 标记 > 第一个
+      var prefs = loadPrefs();
+      var initial = (prefs.model && modelsById[prefs.model])
+        ? prefs.model
+        : (availableModels.find(function (m) { return m.default; }) || availableModels[0]).id;
+      modelSelect.value = initial;
+      applyModelCapabilities(modelsById[initial], { reset: true });
+
+      // 恢复记忆的高级参数（钳制到当前模型范围内）
+      if (prefs.width !== undefined) $('width').value = prefs.width;
+      if (prefs.height !== undefined) $('height').value = prefs.height;
+      if (prefs.num_steps !== undefined) $('num_steps').value = prefs.num_steps;
+      if (prefs.guidance !== undefined) $('guidance').value = prefs.guidance;
+      if (prefs.seed !== undefined) $('seed').value = prefs.seed;
+      if (prefs.prompt) $('prompt').value = prefs.prompt;
+      if (prefs.negativePrompt) $('negative_prompt').value = prefs.negativePrompt;
+      if (prefs.ratio) selectedRatio = prefs.ratio;
+      syncSliderLabels();
+    } catch (error) {
+      console.error('加载模型列表错误:', error);
+      showStatus('模型列表加载失败，请刷新页面重试', 'error');
+    }
+  }
+
+  function syncSliderLabels() {
+    $('widthValue').textContent = $('width').value + 'px';
+    $('heightValue').textContent = $('height').value + 'px';
+    $('num_stepsValue').textContent = $('num_steps').value;
+    $('guidanceValue').textContent = parseFloat($('guidance').value).toFixed(1);
+  }
+
+  async function loadRandomPrompts() {
+    try {
+      var response = await fetch('/api/prompts');
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      randomPromptsList = await response.json();
+    } catch (error) {
+      console.error('加载提示词错误:', error);
+      randomPromptsList = [];
+    }
+  }
+
+  loadModels();
+  loadRandomPrompts();
+
+  // 模型切换
+  $('model').addEventListener('change', function () {
+    var m = modelsById[this.value];
+    if (m) applyModelCapabilities(m, { reset: true });
+    savePrefs();
+  });
+
+  // ============ 高级选项折叠 ============
+  var toggleAdvanced = $('toggleAdvanced');
+  toggleAdvanced.addEventListener('click', function () {
+    var body = $('advancedOptions');
+    var open = body.classList.toggle('hidden') === false;
+    toggleAdvanced.classList.toggle('open', open);
+    toggleAdvanced.setAttribute('aria-expanded', open);
+  });
+
+  // ============ 滑块即时显示 ============
+  [['width', fmtPx], ['height', fmtPx], ['num_steps', fmtNum], ['guidance', fmtGuidance]]
+    .forEach(function (pair) {
+      $(pair[0]).addEventListener('input', function () {
+        $(pair[0] + 'Value').textContent = pair[1](this.value);
+      });
+      $(pair[0]).addEventListener('change', savePrefs);
+    });
+
+  // ============ 随机种子 / 随机提示词 ============
+  $('randomSeed').addEventListener('click', function () {
+    $('seed').value = Math.floor(Math.random() * 4294967295);
+    savePrefs();
+  });
+
+  $('randomButton').addEventListener('click', function () {
+    if (randomPromptsList.length > 0) {
+      var i = Math.floor(Math.random() * randomPromptsList.length);
+      $('prompt').value = randomPromptsList[i];
+      savePrefs();
+    } else {
+      showStatus('提示词库未加载，请稍后再试', 'warning');
+    }
+  });
+
+  ['prompt', 'negative_prompt', 'seed', 'password'].forEach(function (id) {
+    $(id).addEventListener('change', savePrefs);
+  });
+
+  // ============ 参数名称 ============
+  function formatParamName(name) {
+    var nameMap = {
+      prompt: '正向提示词',
+      negative_prompt: '反向提示词',
+      model: '文生图模型',
+      width: '图像宽度',
+      height: '图像高度',
+      num_steps: '迭代步数',
+      guidance: '引导系数',
+      seed: '随机种子',
+      aspect_ratio: '画面比例'
+    };
+    return nameMap[name] || name;
+  }
+
+  // ============ 生成请求 ============
+  function buildParams() {
+    var caps = currentModel.capabilities;
+    var params = {
+      password: $('password').value || '',
+      prompt: $('prompt').value.trim(),
+      model: currentModel.id
+    };
+    if (caps.negativePrompt) params.negative_prompt = $('negative_prompt').value.trim();
+    if (caps.size) {
+      params.width = parseInt($('width').value, 10);
+      params.height = parseInt($('height').value, 10);
+    }
+    if (caps.steps) params.num_steps = parseInt($('num_steps').value, 10);
+    if (caps.guidance) params.guidance = parseFloat($('guidance').value);
+    if (caps.seed) {
+      var seedStr = $('seed').value.trim();
+      // 注意 0 是合法种子：仅在未填写时省略，由服务端随机
+      if (seedStr !== '' && Number.isFinite(Number(seedStr))) params.seed = Math.trunc(Number(seedStr));
+    }
+    if (caps.aspectRatio) params.aspect_ratio = selectedRatio;
+    return params;
+  }
+
+  function setGenerating(on) {
+    isGenerating = on;
+    var btn = $('submitButton');
+    btn.disabled = on;
+    $('submitText').textContent = on ? '生成中…' : '生成图像';
+    btn.setAttribute('aria-busy', on);
+    var overlay = $('loadingOverlay');
+    if (on) {
+      overlay.classList.remove('hidden');
+      var start = performance.now();
+      $('elapsedTimer').textContent = '已等待 0.0s';
+      elapsedInterval = setInterval(function () {
+        $('elapsedTimer').textContent = '已等待 ' + ((performance.now() - start) / 1000).toFixed(1) + 's';
+      }, 100);
+    } else {
+      overlay.classList.add('hidden');
+      if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
+    }
+  }
+
+  async function generate() {
+    if (isGenerating) return;
+    if (!currentModel) { showStatus('模型尚未加载完成', 'warning'); return; }
+
+    var params = buildParams();
+    if (!params.prompt) {
+      showStatus('请先输入正向提示词', 'warning');
+      $('prompt').focus();
+      return;
+    }
+    currentImageParams = params;
+    savePrefs();
+
+    $('emptyState').classList.add('hidden');
+    $('aiImage').classList.add('hidden');
+    $('imageStatus').classList.add('hidden');
+    $('copyParamsButton').classList.add('hidden');
+    $('downloadButton').classList.add('hidden');
+
+    setGenerating(true);
+    var startTime = performance.now();
+
+    try {
+      var response = await fetch('/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'image/*' },
+        body: JSON.stringify(params)
+      });
+
+      if (!response.ok) {
+        var msg = '生成失败（HTTP ' + response.status + '）';
+        try {
+          var errData = await response.json();
+          if (errData && errData.error) msg = errData.error;
+          if (errData && errData.details) console.warn('[text2img] 服务端详情:', errData.details);
+        } catch (e) { /* 非 JSON 错误体 */ }
+        throw new Error(msg);
+      }
+
+      var blob = await response.blob();
+      if (!blob.type.startsWith('image/')) {
+        throw new Error('服务端返回的不是图像数据');
+      }
+      var generationTime = ((performance.now() - startTime) / 1000).toFixed(1);
+
+      // 用 Object URL 展示（内存占用远低于 base64），并释放上一张
+      if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
+      lastObjectUrl = URL.createObjectURL(blob);
+      lastBlob = blob;
+
+      var img = $('aiImage');
+      img.onload = function () {
+        $('generationTime').textContent = generationTime + ' 秒';
+        $('usedModel').textContent = currentModel.name;
+        $('imageMeta').textContent = blob.type === 'image/png' ? 'PNG' : 'JPEG';
+        $('metaRow').classList.remove('hidden');
+        updateParamsDisplay(params);
+        $('copyParamsButton').classList.remove('hidden');
+        $('downloadButton').classList.remove('hidden');
+        showStatus('生成成功', 'success');
+      };
+      img.onerror = function () {
+        showStatus('图像加载失败，请重试', 'error');
+        $('emptyState').classList.remove('hidden');
+      };
+      img.src = lastObjectUrl;
+      img.classList.remove('hidden');
+    } catch (error) {
+      console.error('生成图像错误:', error);
+      showStatus(error.message || '生成失败', 'error');
+      $('emptyState').classList.remove('hidden');
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  $('submitButton').addEventListener('click', generate);
+
+  // Ctrl/Cmd + Enter 快捷键
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      generate();
+    }
+  });
+
+  // ============ 参数展示 / 复制 ============
+  function updateParamsDisplay(params) {
+    var container = $('allParams');
+    container.innerHTML = '';
+    Object.keys(params).forEach(function (key) {
+      if (key === 'password') return;
+      var badge = document.createElement('span');
+      badge.className = 'param-badge';
+      var val = key === 'model' ? currentModel.name : params[key];
+      badge.innerHTML = '<b>' + formatParamName(key) + '</b>' + String(val)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      container.appendChild(badge);
+    });
+    $('allParamsContainer').classList.remove('hidden');
+  }
+
+  $('copyParamsButton').addEventListener('click', function () {
+    var lines = ['--- foxai 文生图参数 ---'];
+    Object.keys(currentImageParams).forEach(function (key) {
+      if (key === 'password') return;
+      var val = key === 'model' ? currentModel.name : currentImageParams[key];
+      lines.push(formatParamName(key) + ': ' + val);
+    });
+    navigator.clipboard.writeText(lines.join('\n'))
+      .then(function () { showStatus('参数已复制到剪贴板', 'success'); })
+      .catch(function () { showStatus('复制失败，请手动复制', 'error'); });
+  });
+
+  // ============ 下载 ============
+  $('downloadButton').addEventListener('click', function () {
+    if (!lastBlob) { showStatus('没有可下载的图像', 'error'); return; }
+    var ext = lastBlob.type === 'image/png' ? 'png'
+      : (lastBlob.type === 'image/jpg' || lastBlob.type === 'image/jpeg') ? 'jpg' : 'img';
+    var url = URL.createObjectURL(lastBlob);
+    var link = document.createElement('a');
+    var timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    link.href = url;
+    link.download = currentModel.id + '-' + timestamp + '.' + ext;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    showStatus('图像已开始下载', 'success');
+  });
+});
+</script>
 </body>
 </html>
