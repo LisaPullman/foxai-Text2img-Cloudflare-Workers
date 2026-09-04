@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="app-version" content="2026.09.03-3">
+<meta name="app-version" content="2026.09.03-5">
 <title>foxai · 免费在线文生图</title>
 <script>
 /* 主题初始化：必须在样式表加载前执行，避免深色用户看到亮色闪烁 */
@@ -110,6 +110,22 @@ a { color: var(--brand); text-decoration: none; }
 .topbar-sub { color: var(--text-soft); font-size: 13px; margin-left: 10px; padding-left: 12px;
   border-left: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topbar-actions { display: flex; align-items: center; gap: 8px; }
+
+/* 主题三态切换（自动 / 亮 / 暗） */
+.theme-seg {
+  display: inline-flex; align-items: center;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px; gap: 2px;
+}
+.theme-seg button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  border: none; background: transparent; color: var(--text-soft);
+  border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px;
+  cursor: pointer; transition: all 0.15s ease;
+}
+.theme-seg button .icon { width: 13px; height: 13px; }
+.theme-seg button:hover { color: var(--text); }
+.theme-seg button.active { background: var(--surface); color: var(--brand); box-shadow: var(--shadow); font-weight: 600; }
 
 /* ===================== 布局 ===================== */
 .layout {
@@ -230,6 +246,17 @@ textarea:focus, select:focus, input:focus {
 .ratio-btn:hover { border-color: var(--brand); color: var(--brand); }
 .ratio-btn.active { background: var(--brand); border-color: var(--brand); color: var(--brand-foreground); font-weight: 600; }
 
+/* 生成数量分段选择 */
+.seg { display: flex; gap: 6px; }
+.seg-btn {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-soft);
+  border-radius: 8px; padding: 7px 8px; font: inherit; font-size: 13px;
+  cursor: pointer; transition: all 0.15s ease;
+}
+.seg-btn:hover { border-color: var(--brand); color: var(--brand); }
+.seg-btn.active { background: var(--brand); border-color: var(--brand); color: var(--brand-foreground); font-weight: 600; }
+
 /* 高级选项折叠 */
 .adv-toggle { width: 100%; justify-content: space-between; }
 .adv-toggle .icon.chevron { transition: transform 0.2s ease; }
@@ -260,24 +287,79 @@ textarea:focus, select:focus, input:focus {
 .stage-empty { text-align: center; color: var(--text-soft); user-select: none; }
 .stage-empty svg.mark { width: 88px; height: 88px; opacity: 0.22; margin-bottom: 12px; }
 .stage-empty p { margin: 4px 0; font-size: 13.5px; }
-#aiImage { max-width: 100%; max-height: 100%; border-radius: 8px; box-shadow: var(--shadow-lg); }
 
-/* 加载遮罩 */
-.loading-mask {
-  position: absolute; inset: 0; z-index: 10;
+/* 结果网格（单图 / 2 图 / 2×2） */
+.results-grid { display: grid; gap: 12px; width: 100%; }
+.results-grid[data-count="1"] { grid-template-columns: 1fr; }
+.results-grid[data-count="2"],
+.results-grid[data-count="4"] { grid-template-columns: 1fr 1fr; }
+.result-cell {
+  position: relative; margin: 0; overflow: hidden;
+  border-radius: 10px; background: var(--surface-2);
+  border: 1px solid var(--border);
   display: flex; align-items: center; justify-content: center;
-  background: color-mix(in srgb, var(--surface) 72%, transparent);
-  backdrop-filter: blur(5px);
+  min-height: 180px;
+  animation: cellIn 0.3s ease;
 }
+@keyframes cellIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
+.result-cell.done { cursor: zoom-in; }
+.result-cell img { max-width: 100%; max-height: 100%; display: block; }
+.results-grid[data-count="1"] .result-cell img { max-height: min(72vh, 920px); }
+.results-grid:not([data-count="1"]) .result-cell img { max-height: 480px; }
+
+/* 单格加载 / 失败状态 */
+.cell-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 28px 14px; color: var(--text-soft);
+  font-size: 12.5px; text-align: center;
+}
+.cell-state .spinner { width: 24px; height: 24px; border-width: 2.5px; margin: 0; }
+.cell-state .icon.alert { width: 22px; height: 22px; color: var(--error); }
+.cell-error-text { max-width: 92%; word-break: break-word; }
+
 .spinner {
   width: 34px; height: 34px; border-radius: 50%;
   border: 3px solid var(--brand-muted); border-top-color: var(--brand);
   animation: spin 0.8s linear infinite; margin: 0 auto 12px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading-text { text-align: center; font-weight: 500; }
-.loading-text .elapsed { font-size: 12.5px; color: var(--text-soft); margin-top: 2px;
-  font-variant-numeric: tabular-nums; }
+
+/* 悬停操作（查看 / 下载） */
+.cell-actions {
+  position: absolute; top: 8px; right: 8px; display: flex; gap: 6px;
+  opacity: 0; transition: opacity 0.15s ease;
+}
+.result-cell:hover .cell-actions,
+.result-cell:focus-within .cell-actions { opacity: 1; }
+.cell-actions .btn {
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+/* 灯箱（大图查看） */
+.lightbox {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(8, 9, 10, 0.9);
+  display: flex; align-items: center; justify-content: center;
+}
+.lightbox img { max-width: 92vw; max-height: 82vh; border-radius: 8px; box-shadow: var(--shadow-lg); }
+.lb-btn {
+  position: absolute; display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
+  background: rgba(255, 255, 255, 0.12); color: #FFF;
+  transition: background 0.15s ease;
+}
+.lb-btn:hover { background: rgba(255, 255, 255, 0.26); }
+.lb-close { top: 18px; right: 18px; }
+.lb-nav.left { left: 18px; top: 50%; transform: translateY(-50%); }
+.lb-nav.right { right: 18px; top: 50%; transform: translateY(-50%); }
+.lb-bar {
+  position: absolute; bottom: 22px; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  color: #FFF; font-size: 13.5px; font-variant-numeric: tabular-nums;
+}
+.lb-bar .btn { background: rgba(255, 255, 255, 0.12); color: #FFF; border: none; }
+.lb-bar .btn:hover { background: rgba(255, 255, 255, 0.26); }
 
 /* 状态徽章（半透明底色，双主题自适应） */
 #imageStatus {
@@ -318,12 +400,48 @@ textarea:focus, select:focus, input:focus {
 .footer a:hover { color: var(--brand); }
 
 /* ===================== 响应式 ===================== */
+/* 触屏设备无 hover：结果格操作按钮常显 */
+@media (hover: none) {
+  .cell-actions { opacity: 1; }
+}
+
 @media (max-width: 960px) {
-  .layout { flex-direction: column; padding: 14px; }
+  .layout { flex-direction: column; padding: 14px; gap: 14px; }
   .composer { width: 100%; }
-  .stage { min-height: 360px; }
+  .stage { min-height: 360px; padding: 12px; }
   .topbar { padding: 0 14px; }
   .topbar-sub { display: none; }
+  /* iOS Safari 聚焦 <16px 输入框会自动放大页面 */
+  textarea, select, input { font-size: 16px; }
+  textarea { min-height: 88px; }
+  /* 网格更紧凑，多图上限高度收缩 */
+  .results-grid { gap: 8px; }
+  .results-grid:not([data-count="1"]) .result-cell img { max-height: 320px; }
+  .cell-actions .btn { width: 30px; height: 30px; }
+  /* 触屏无键盘，隐藏快捷键提示 */
+  .kbd-hint { display: none; }
+  .footer { padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+}
+
+@media (max-width: 640px) {
+  /* 灯箱：导航按钮缩小贴边，避免遮挡图片 */
+  .lb-close { top: 10px; right: 10px; width: 36px; height: 36px; }
+  .lb-nav.left { left: 6px; }
+  .lb-nav.right { right: 6px; }
+  .lb-nav { width: 36px; height: 36px; }
+  .lightbox img { max-width: 94vw; max-height: 76vh; }
+  .lb-bar { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
+}
+
+@media (max-width: 480px) {
+  .topbar { padding: 0 10px; gap: 6px; }
+  .lockup svg { width: 22px; height: 22px; }
+  /* 主题切换的“自动”仅留图标，给标识留出空间 */
+  .theme-seg button { padding: 4px 7px; }
+  .theme-seg .seg-label { display: none; }
+  .ratio-row { gap: 5px; }
+  .ratio-btn { padding: 5px 9px; font-size: 12.5px; }
+  .meta-row { gap: 6px 16px; font-size: 12.5px; }
 }
 </style>
 </head>
@@ -348,6 +466,13 @@ textarea:focus, select:focus, input:focus {
   <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/></symbol>
   <symbol id="i-seed" viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-edit" viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
+  <symbol id="i-maximize" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
 </svg>
 
 <!-- 顶栏 -->
@@ -367,9 +492,17 @@ textarea:focus, select:focus, input:focus {
     <span class="topbar-sub">免费在线文生图 · Cloudflare Workers AI</span>
   </div>
   <div class="topbar-actions">
-    <button id="themeToggle" class="btn btn-icon" aria-label="切换暗色主题" title="切换主题">
-      <svg class="icon" id="themeIcon"><use href="#i-moon"/></svg>
-    </button>
+    <div class="theme-seg" id="themeSeg" role="group" aria-label="主题模式">
+      <button type="button" data-mode="auto" title="跟随系统主题">
+        <svg class="icon"><use href="#i-monitor"/></svg><span class="seg-label">自动</span>
+      </button>
+      <button type="button" data-mode="light" title="亮色模式" aria-label="亮色模式">
+        <svg class="icon"><use href="#i-sun"/></svg>
+      </button>
+      <button type="button" data-mode="dark" title="暗色模式" aria-label="暗色模式">
+        <svg class="icon"><use href="#i-moon"/></svg>
+      </button>
+    </div>
     <button id="githubBtn" class="btn btn-icon" aria-label="项目地址" title="GitHub 项目"
             onclick="window.open('https://github.com/LisaPullman/foxai-Text2img-Cloudflare-Workers', '_blank')">
       <svg class="icon"><use href="#i-github"/></svg>
@@ -387,6 +520,14 @@ textarea:focus, select:focus, input:focus {
       </select>
       <div class="model-info" id="modelInfo"></div>
       <div class="cap-chips" id="capChips"></div>
+
+      <div class="field" id="ratioGroup" style="margin-top:14px;margin-bottom:0;">
+        <div class="field-label">
+          <span>画面比例</span>
+          <span class="hint" id="sizeHint" style="margin:0;font-variant-numeric:tabular-nums;"></span>
+        </div>
+        <div class="ratio-row" id="ratioRow"></div>
+      </div>
     </section>
 
     <section class="card">
@@ -411,6 +552,20 @@ textarea:focus, select:focus, input:focus {
           </label>
         </div>
         <textarea id="negative_prompt" rows="2" placeholder="不想出现在图像中的元素（该模型不支持时隐藏）"></textarea>
+      </div>
+
+      <div class="field">
+        <div class="field-label">
+          <label style="display:flex;align-items:center;">
+            <svg class="icon"><use href="#i-layers"/></svg>生成数量
+          </label>
+        </div>
+        <div class="seg" id="batchSeg">
+          <button type="button" class="seg-btn active" data-n="1">1 张</button>
+          <button type="button" class="seg-btn" data-n="2">2 张</button>
+          <button type="button" class="seg-btn" data-n="4">4 张</button>
+        </div>
+        <p class="hint">多张并行生成（同时最多 2 张在途，限流自动重试），额度消耗相应倍增</p>
       </div>
     </section>
 
@@ -450,12 +605,7 @@ textarea:focus, select:focus, input:focus {
             <span class="slider-value" id="heightValue">1024px</span>
           </div>
           <input type="range" id="height" min="256" max="2048" step="64" value="1024" class="slider">
-        </div>
-
-        <div class="field" id="aspectGroup">
-          <div class="field-label"><span>画面比例</span></div>
-          <div class="ratio-row" id="ratioRow"></div>
-          <p class="hint">该模型按比例出图，不支持自定义像素尺寸</p>
+          <p class="hint" id="customSizeHint">拖动微调尺寸；与上方预设不一致时按自定义输出</p>
         </div>
 
         <div class="field" id="stepsGroup">
@@ -513,7 +663,7 @@ textarea:focus, select:focus, input:focus {
           <svg class="icon"><use href="#i-copy"/></svg> 复制参数
         </button>
         <button id="downloadButton" class="btn hidden">
-          <svg class="icon"><use href="#i-download"/></svg> 下载图像
+          <svg class="icon"><use href="#i-download"/></svg> <span id="downloadText">下载图像</span>
         </button>
       </div>
     </div>
@@ -531,17 +681,7 @@ textarea:focus, select:focus, input:focus {
         <p style="font-size:12px;">生成通常需要几秒到几十秒</p>
       </div>
 
-      <img id="aiImage" class="hidden" alt="生成的图像">
-
-      <div id="loadingOverlay" class="loading-mask hidden">
-        <div>
-          <div class="spinner"></div>
-          <div class="loading-text">
-            正在生成，请稍候…
-            <div class="elapsed" id="elapsedTimer">已等待 0.0s</div>
-          </div>
-        </div>
-      </div>
+      <div id="resultsGrid" class="results-grid hidden"></div>
 
       <span id="imageStatus" class="hidden"></span>
     </div>
@@ -549,6 +689,7 @@ textarea:focus, select:focus, input:focus {
     <div class="meta-row hidden" id="metaRow">
       <span><svg class="icon"><use href="#i-clock"/></svg>耗时 <b id="generationTime">-</b></span>
       <span><svg class="icon"><use href="#i-cpu"/></svg>模型 <b id="usedModel">-</b></span>
+      <span><svg class="icon"><use href="#i-layers"/></svg>数量 <b id="generationCount">-</b></span>
       <span id="imageMeta"></span>
     </div>
 
@@ -565,8 +706,28 @@ textarea:focus, select:focus, input:focus {
   Powered by <a href="https://developers.cloudflare.com/workers-ai/" target="_blank" rel="noopener">Cloudflare Workers AI</a>
   · 免费额度内即可使用 ·
   <a href="https://github.com/LisaPullman/foxai-Text2img-Cloudflare-Workers" target="_blank" rel="noopener">GitHub</a>
-  · <span style="opacity:.55">v2026.09.03-3</span>
+  · <span style="opacity:.55">v2026.09.03-5</span>
 </footer>
+
+<!-- 灯箱：大图查看（多图可左右切换） -->
+<div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true" aria-label="图像预览">
+  <button type="button" id="lbClose" class="lb-btn lb-close" aria-label="关闭预览">
+    <svg class="icon"><use href="#i-x"/></svg>
+  </button>
+  <button type="button" id="lbPrev" class="lb-btn lb-nav left" aria-label="上一张">
+    <svg class="icon"><use href="#i-left"/></svg>
+  </button>
+  <img id="lbImage" alt="预览图像">
+  <button type="button" id="lbNext" class="lb-btn lb-nav right" aria-label="下一张">
+    <svg class="icon"><use href="#i-right"/></svg>
+  </button>
+  <div class="lb-bar">
+    <span id="lbCaption"></span>
+    <button type="button" id="lbDownload" class="btn">
+      <svg class="icon"><use href="#i-download"/></svg> 下载
+    </button>
+  </div>
+</div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -580,30 +741,57 @@ document.addEventListener('DOMContentLoaded', function () {
   var randomPromptsList = [];
   var currentImageParams = {};
   var isGenerating = false;
-  var lastBlob = null;
-  var lastObjectUrl = null;
   var statusTimer = null;
   var elapsedInterval = null;
   var selectedRatio = '1:1';
+  var numImages = 1;
+  var results = [];          // [{ params, status: 'loading'|'done'|'error', blob, url, error }]
+  var doneCount = 0;
+  var failCount = 0;
+  var genStart = 0;
+  var lbIndex = 0;
 
   var PREFS_KEY = 't2i:prefs';
 
-  // ============ 主题切换 ============
-  var themeToggle = $('themeToggle');
-  var themeIcon = $('themeIcon');
+  // ============ 主题模式（自动 / 亮 / 暗） ============
+  var themeSeg = $('themeSeg');
+  var systemDark = matchMedia('(prefers-color-scheme: dark)');
 
-  function syncThemeButton() {
-    var dark = document.documentElement.classList.contains('dark');
-    themeIcon.innerHTML = '<use href="#' + (dark ? 'i-sun' : 'i-moon') + '"/>';
-    themeToggle.setAttribute('aria-label', dark ? '切换亮色主题' : '切换暗色主题');
+  function currentThemeMode() {
+    try {
+      return localStorage.theme === 'dark' || localStorage.theme === 'light'
+        ? localStorage.theme
+        : 'auto';
+    } catch (e) { return 'auto'; }
   }
 
-  themeToggle.addEventListener('click', function () {
-    var dark = document.documentElement.classList.toggle('dark');
-    try { localStorage.theme = dark ? 'dark' : 'light'; } catch (e) {}
-    syncThemeButton();
+  function syncThemeSeg() {
+    var mode = currentThemeMode();
+    Array.prototype.forEach.call(themeSeg.querySelectorAll('button'), function (b) {
+      b.classList.toggle('active', b.dataset.mode === mode);
+    });
+  }
+
+  function applyThemeMode(mode) {
+    var dark = mode === 'dark' || (mode === 'auto' && systemDark.matches);
+    document.documentElement.classList.toggle('dark', dark);
+    try {
+      if (mode === 'auto') localStorage.removeItem('theme');
+      else localStorage.theme = mode;
+    } catch (e) { /* 隐私模式下 localStorage 可能不可用 */ }
+    syncThemeSeg();
+  }
+
+  Array.prototype.forEach.call(themeSeg.querySelectorAll('button'), function (b) {
+    b.addEventListener('click', function () { applyThemeMode(b.dataset.mode); });
   });
-  syncThemeButton();
+  // 自动模式下实时跟随系统明暗切换
+  if (systemDark.addEventListener) {
+    systemDark.addEventListener('change', function () {
+      if (currentThemeMode() === 'auto') applyThemeMode('auto');
+    });
+  }
+  syncThemeSeg();
 
   // ============ 偏好记忆 ============
   function loadPrefs() {
@@ -613,7 +801,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function savePrefs() {
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify({
-        model: $('model').value,
+        // 注意：model 不记忆——每次打开页面固定默认模型
         prompt: $('prompt').value,
         negativePrompt: $('negative_prompt').value,
         width: $('width').value,
@@ -621,20 +809,27 @@ document.addEventListener('DOMContentLoaded', function () {
         num_steps: $('num_steps').value,
         guidance: $('guidance').value,
         seed: $('seed').value,
-        ratio: selectedRatio
+        ratio: selectedRatio,
+        numImages: numImages
       }));
     } catch (e) { /* 忽略存储异常 */ }
   }
 
   // ============ 状态提示 ============
-  function showStatus(message, type) {
+  function showStatus(message, type, persistent) {
     var el = $('imageStatus');
     if (!el) return;
     el.className = 'status-' + (type || 'info');
     el.textContent = message;
     el.classList.remove('hidden');
     if (statusTimer) clearTimeout(statusTimer);
-    statusTimer = setTimeout(function () { el.classList.add('hidden'); }, 5000);
+    // persistent: 生成期间持续显示进度，不被自动隐藏
+    if (!persistent) statusTimer = setTimeout(function () { el.classList.add('hidden'); }, 5000);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   // ============ 模型能力适配 ============
@@ -678,7 +873,6 @@ document.addEventListener('DOMContentLoaded', function () {
     var sizeOn = !!caps.size;
     $('widthGroup').classList.toggle('hidden', !sizeOn);
     $('heightGroup').classList.toggle('hidden', !sizeOn);
-    $('aspectGroup').classList.toggle('hidden', !caps.aspectRatio);
     $('guidanceGroup').classList.toggle('hidden', !caps.guidance);
     $('seedGroup').classList.toggle('hidden', !caps.seed);
 
@@ -709,29 +903,73 @@ document.addEventListener('DOMContentLoaded', function () {
         value: caps.guidance.default, reset: !!opts.reset, format: fmtGuidance });
     }
 
-    // 画面比例按钮
+    // 画面比例预设（比例模型直接选比例；像素模型选比例即套用预设宽高）
+    buildRatioRow(caps);
+  }
+
+  function buildRatioRow(caps) {
+    var row = $('ratioRow');
+    row.innerHTML = '';
+    var presets = null;
     if (caps.aspectRatio) {
-      var row = $('ratioRow');
-      row.innerHTML = '';
-      caps.aspectRatio.forEach(function (r) {
-        var b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'ratio-btn' + (r === selectedRatio ? ' active' : '');
-        b.textContent = r;
-        b.addEventListener('click', function () {
-          selectedRatio = r;
-          row.querySelectorAll('.ratio-btn').forEach(function (x) { x.classList.remove('active'); });
-          b.classList.add('active');
-          savePrefs();
-        });
-        row.appendChild(b);
-      });
-      if (!caps.aspectRatio.includes(selectedRatio)) {
-        selectedRatio = caps.aspectRatio[0];
-        var first = row.querySelector('.ratio-btn');
-        if (first) first.classList.add('active');
-      }
+      presets = caps.aspectRatio.map(function (r) { return { label: r }; });
+    } else if (caps.size && caps.size.presets) {
+      presets = caps.size.presets;
     }
+    $('ratioGroup').classList.toggle('hidden', !presets);
+    if (!presets) { $('sizeHint').textContent = ''; return; }
+
+    presets.forEach(function (p) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ratio-btn';
+      b.dataset.label = p.label;
+      b.textContent = p.label;
+      if (caps.size) b.title = p.w + ' × ' + p.h + ' px';
+      b.addEventListener('click', function () {
+        if (caps.aspectRatio) {
+          selectedRatio = p.label;
+        } else {
+          $('width').value = p.w;
+          $('height').value = p.h;
+          $('widthValue').textContent = p.w + 'px';
+          $('heightValue').textContent = p.h + 'px';
+        }
+        syncPresetUI();
+        savePrefs();
+      });
+      row.appendChild(b);
+    });
+
+    if (caps.aspectRatio && !caps.aspectRatio.includes(selectedRatio)) {
+      selectedRatio = caps.aspectRatio[0];
+    }
+    syncPresetUI();
+  }
+
+  // 同步预设按钮高亮与右侧尺寸提示；滑块值与预设不一致时视为「自定义」
+  function syncPresetUI() {
+    if (!currentModel) return;
+    var caps = currentModel.capabilities;
+    var row = $('ratioRow');
+    if (row.children.length === 0) return;
+    var active = null;
+
+    if (caps.aspectRatio) {
+      active = selectedRatio;
+      $('sizeHint').textContent = '按所选比例输出';
+    } else if (caps.size) {
+      var w = parseInt($('width').value, 10);
+      var h = parseInt($('height').value, 10);
+      $('sizeHint').textContent = w + '×' + h + ' px';
+      (caps.size.presets || []).forEach(function (p) {
+        if (p.w === w && p.h === h) active = p.label;
+      });
+    }
+
+    Array.prototype.forEach.call(row.querySelectorAll('.ratio-btn'), function (b) {
+      b.classList.toggle('active', b.dataset.label === active);
+    });
   }
 
   // ============ 模型列表加载 ============
@@ -752,24 +990,38 @@ document.addEventListener('DOMContentLoaded', function () {
         modelSelect.appendChild(option);
       });
 
-      // 默认选中：记住的偏好 > default 标记 > 第一个
+      // 默认选中：每次打开固定选中 default 标记的模型（FLUX.1 [schnell]），
+      // 不恢复上次使用的模型；会话内切换不受影响
       var prefs = loadPrefs();
-      var initial = (prefs.model && modelsById[prefs.model])
-        ? prefs.model
-        : (availableModels.find(function (m) { return m.default; }) || availableModels[0]).id;
+      var initial = (availableModels.find(function (m) { return m.default; }) || availableModels[0]).id;
       modelSelect.value = initial;
+
+      // 先恢复记忆的比例/数量，再渲染模型控件，避免预设高亮被覆盖
+      if (prefs.ratio) selectedRatio = prefs.ratio;
+      if (prefs.numImages === 1 || prefs.numImages === 2 || prefs.numImages === 4) {
+        numImages = prefs.numImages;
+      }
+      syncBatchSeg();
       applyModelCapabilities(modelsById[initial], { reset: true });
 
-      // 恢复记忆的高级参数（钳制到当前模型范围内）
-      if (prefs.width !== undefined) $('width').value = prefs.width;
-      if (prefs.height !== undefined) $('height').value = prefs.height;
-      if (prefs.num_steps !== undefined) $('num_steps').value = prefs.num_steps;
-      if (prefs.guidance !== undefined) $('guidance').value = prefs.guidance;
+      // 恢复记忆的高级参数（钳制到当前滑块范围内）
+      function restoreSliderValue(el, val) {
+        var n = Number(val);
+        if (!Number.isFinite(n)) return;
+        var min = parseFloat(el.min), max = parseFloat(el.max);
+        if (n < min) n = min;
+        if (n > max) n = max;
+        el.value = n;
+      }
+      if (prefs.width !== undefined) restoreSliderValue($('width'), prefs.width);
+      if (prefs.height !== undefined) restoreSliderValue($('height'), prefs.height);
+      if (prefs.num_steps !== undefined) restoreSliderValue($('num_steps'), prefs.num_steps);
+      if (prefs.guidance !== undefined) restoreSliderValue($('guidance'), prefs.guidance);
       if (prefs.seed !== undefined) $('seed').value = prefs.seed;
       if (prefs.prompt) $('prompt').value = prefs.prompt;
       if (prefs.negativePrompt) $('negative_prompt').value = prefs.negativePrompt;
-      if (prefs.ratio) selectedRatio = prefs.ratio;
       syncSliderLabels();
+      syncPresetUI();
     } catch (error) {
       console.error('加载模型列表错误:', error);
       showStatus('模型列表加载失败，请刷新页面重试', 'error');
@@ -821,6 +1073,24 @@ document.addEventListener('DOMContentLoaded', function () {
       });
       $(pair[0]).addEventListener('change', savePrefs);
     });
+  // 宽高拖动时同步预设按钮高亮（与预设不一致则显示为自定义）
+  ['width', 'height'].forEach(function (id) {
+    $(id).addEventListener('input', syncPresetUI);
+  });
+
+  // ============ 生成数量（1 / 2 / 4 张） ============
+  function syncBatchSeg() {
+    Array.prototype.forEach.call($('batchSeg').querySelectorAll('.seg-btn'), function (b) {
+      b.classList.toggle('active', parseInt(b.dataset.n, 10) === numImages);
+    });
+  }
+  Array.prototype.forEach.call($('batchSeg').querySelectorAll('.seg-btn'), function (b) {
+    b.addEventListener('click', function () {
+      numImages = parseInt(b.dataset.n, 10);
+      syncBatchSeg();
+      savePrefs();
+    });
+  });
 
   // ============ 随机种子 / 随机提示词 ============
   $('randomSeed').addEventListener('click', function () {
@@ -853,7 +1123,8 @@ document.addEventListener('DOMContentLoaded', function () {
       num_steps: '迭代步数',
       guidance: '引导系数',
       seed: '随机种子',
-      aspect_ratio: '画面比例'
+      aspect_ratio: '画面比例',
+      numImages: '生成数量'
     };
     return nameMap[name] || name;
   }
@@ -888,104 +1159,356 @@ document.addEventListener('DOMContentLoaded', function () {
     btn.disabled = on;
     $('submitText').textContent = on ? '生成中…' : '生成图像';
     btn.setAttribute('aria-busy', on);
-    var overlay = $('loadingOverlay');
-    if (on) {
-      overlay.classList.remove('hidden');
-      var start = performance.now();
-      $('elapsedTimer').textContent = '已等待 0.0s';
-      elapsedInterval = setInterval(function () {
-        $('elapsedTimer').textContent = '已等待 ' + ((performance.now() - start) / 1000).toFixed(1) + 's';
-      }, 100);
-    } else {
-      overlay.classList.add('hidden');
-      if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
+  }
+
+  // ============ 批量生成（1 / 2 / 4 张并行） ============
+  // 多张时派生不同种子保证图像互不相同：用户填了种子则以该种子为基准 +i，
+  // 未填则随机基准（单张时不传 seed，由服务端随机）
+  function deriveSeeds(baseParams, n) {
+    if (!currentModel.capabilities.seed || n <= 1) return null;
+    var base = (baseParams.seed !== undefined)
+      ? Number(baseParams.seed)
+      : Math.floor(Math.random() * 4294967296);
+    var seeds = [];
+    for (var i = 0; i < n; i++) seeds.push((base + i) % 4294967296);
+    return seeds;
+  }
+
+  function revokeResults() {
+    results.forEach(function (r) {
+      if (r.url) { URL.revokeObjectURL(r.url); r.url = null; }
+    });
+  }
+
+  function renderGrid() {
+    revokeResults();
+    var grid = $('resultsGrid');
+    grid.dataset.count = String(results.length);
+    grid.innerHTML = '';
+    results.forEach(function (r, i) {
+      var cell = document.createElement('figure');
+      cell.className = 'result-cell';
+      cell.id = 'cell-' + i;
+      cell.innerHTML = '<div class="cell-state"><div class="spinner"></div>' +
+        '<div class="cell-state-text">排队中…</div></div>';
+      grid.appendChild(cell);
+    });
+    grid.classList.remove('hidden');
+  }
+
+  function cellDone(i) {
+    var r = results[i];
+    var cell = $('cell-' + i);
+    if (!cell || !r.url) return;
+    cell.innerHTML = '';
+
+    var img = document.createElement('img');
+    img.alt = '生成的图像 ' + (i + 1);
+    img.src = r.url;
+
+    var actions = document.createElement('div');
+    actions.className = 'cell-actions';
+    var viewBtn = document.createElement('button');
+    viewBtn.type = 'button';
+    viewBtn.className = 'btn btn-icon';
+    viewBtn.title = '查看大图';
+    viewBtn.innerHTML = '<svg class="icon"><use href="#i-maximize"/></svg>';
+    viewBtn.addEventListener('click', function (e) { e.stopPropagation(); openLightbox(i); });
+
+    var saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'btn btn-icon';
+    saveBtn.title = '下载此图';
+    saveBtn.innerHTML = '<svg class="icon"><use href="#i-download"/></svg>';
+    saveBtn.addEventListener('click', function (e) { e.stopPropagation(); downloadResult(i); });
+
+    actions.appendChild(viewBtn);
+    actions.appendChild(saveBtn);
+    cell.appendChild(img);
+    cell.appendChild(actions);
+    cell.classList.add('done');
+    cell.addEventListener('click', function () { openLightbox(i); });
+  }
+
+  function cellFailed(i, message) {
+    var cell = $('cell-' + i);
+    if (!cell) return;
+    cell.className = 'result-cell failed';
+    cell.innerHTML =
+      '<div class="cell-state">' +
+      '<svg class="icon alert"><use href="#i-alert"/></svg>' +
+      '<div class="cell-error-text">' + escapeHtml(message || '生成失败') + '</div>' +
+      '<button type="button" class="btn" style="font-size:12.5px;padding:4px 12px;">' +
+      '<svg class="icon" style="width:12px;height:12px;"><use href="#i-refresh"/></svg> 重试</button></div>';
+    cell.querySelector('button').addEventListener('click', function (e) {
+      e.stopPropagation();
+      retryCell(i);
+    });
+  }
+
+  function updateProgress() {
+    showStatus('生成中 ' + doneCount + '/' + results.length + ' 张 · ' +
+      ((performance.now() - genStart) / 1000).toFixed(1) + 's', 'info', true);
+  }
+  function startTimer() {
+    stopTimer();
+    updateProgress();
+    elapsedInterval = setInterval(updateProgress, 100);
+  }
+  function stopTimer() {
+    if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
+  }
+
+  // ============ 请求层：并发池 + 限流自动重试 ============
+  // 多张并行请求容易触发 Workers AI 限流（429），三重缓解：
+  //   1) runPool 限制同时在途请求数，任务按顺序补位
+  //   2) 任务启动时错峰，避免瞬时突发
+  //   3) requestImage 对 429/5xx/网络错误指数退避自动重试（400/403 等业务错误不重试）
+  var MAX_CONCURRENCY = 2;
+  var MAX_AUTO_RETRY = 2;
+  var RETRY_BASE_DELAY = 1500;
+  var START_STAGGER = 400;
+
+  function sleep(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
+
+  function setCellStateText(i, text) {
+    var el = document.querySelector('#cell-' + i + ' .cell-state-text');
+    if (el) el.textContent = text;
+  }
+
+  async function requestImage(i) {
+    var r = results[i];
+    var lastError = null;
+    for (var attempt = 0; attempt <= MAX_AUTO_RETRY; attempt++) {
+      if (attempt > 0) {
+        setCellStateText(i, '第 ' + (i + 1) + ' 张被限流，自动重试 (' + attempt + '/' + MAX_AUTO_RETRY + ')…');
+        await sleep(RETRY_BASE_DELAY * Math.pow(2, attempt - 1) + Math.random() * 500);
+      } else {
+        setCellStateText(i, '第 ' + (i + 1) + ' 张生成中…');
+      }
+      try {
+        var response = await fetch('/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'image/*' },
+          body: JSON.stringify(r.params)
+        });
+        if (!response.ok) {
+          var msg = '生成失败（HTTP ' + response.status + '）';
+          try {
+            var errData = await response.json();
+            if (errData && errData.error) msg = errData.error;
+            if (errData && errData.details) console.warn('[text2img] 服务端详情:', errData.details);
+          } catch (e) { /* 非 JSON 错误体 */ }
+          var err = new Error(msg);
+          err.retryable = response.status === 429 || response.status >= 500;
+          throw err;
+        }
+        var blob = await response.blob();
+        if (!blob.type.startsWith('image/')) throw new Error('服务端返回的不是图像数据');
+        return blob;
+      } catch (error) {
+        lastError = error;
+        // 显式不可重试（retryable === false）直接抛出；网络错误/限流/5xx 继续重试
+        if (error && error.retryable === false) throw error;
+      }
     }
+    throw lastError;
+  }
+
+  // 并发池：最多 limit 个任务在途，空闲槽位按序启动下一个
+  function runPool(total, limit, task) {
+    return new Promise(function (resolve) {
+      var next = 0, active = 0, launched = 0;
+      function slot() {
+        if (next >= total) {
+          if (active === 0) resolve();
+          return;
+        }
+        var i = next++;
+        active++;
+        sleep(launched++ * START_STAGGER)
+          .then(function () { return task(i); })
+          .then(function () { active--; slot(); },
+                function () { active--; slot(); });
+      }
+      for (var k = 0; k < Math.min(limit, total); k++) slot();
+    });
+  }
+
+  async function runOne(i) {
+    var r = results[i];
+    try {
+      var blob = await requestImage(i);
+
+      // Object URL 展示（内存占用远低于 base64），在下一次生成时统一释放
+      r.blob = blob;
+      r.url = URL.createObjectURL(blob);
+      r.status = 'done';
+      doneCount++;
+      cellDone(i);
+    } catch (error) {
+      console.error('[text2img] 第 ' + (i + 1) + ' 张生成失败:', error);
+      r.status = 'error';
+      r.error = error.message || '生成失败';
+      failCount++;
+      cellFailed(i, r.error);
+    }
+    updateProgress();
+  }
+
+  function refreshBatchStatus() {
+    if (failCount === 0) {
+      showStatus('生成成功', 'success');
+    } else if (doneCount > 0) {
+      showStatus(doneCount + ' 张成功，' + failCount + ' 张失败，可对失败项重试', 'warning');
+    } else {
+      showStatus('生成失败', 'error');
+    }
+  }
+
+  async function retryCell(i) {
+    var r = results[i];
+    if (!r || r.status !== 'error' || isGenerating) return;
+    setGenerating(true);
+    if (failCount > 0) failCount--;
+    r.status = 'loading';
+    var cell = $('cell-' + i);
+    cell.className = 'result-cell';
+    cell.innerHTML = '<div class="cell-state"><div class="spinner"></div>' +
+      '<div class="cell-state-text">正在重试第 ' + (i + 1) + ' 张…</div></div>';
+    genStart = performance.now();
+    startTimer();
+    await runOne(i);
+    stopTimer();
+    setGenerating(false);
+    if (r.status === 'done' && doneCount === results.length) {
+      updateBatchMeta();
+    }
+    refreshBatchStatus();
+  }
+
+  function updateBatchMeta() {
+    var firstDone = results.find(function (r) { return r.status === 'done'; });
+    if (!firstDone) return;
+    $('generationCount').textContent = doneCount + ' 张';
+    $('imageMeta').textContent = firstDone.blob.type === 'image/png' ? 'PNG' : 'JPEG';
   }
 
   async function generate() {
     if (isGenerating) return;
     if (!currentModel) { showStatus('模型尚未加载完成', 'warning'); return; }
 
-    var params = buildParams();
-    if (!params.prompt) {
+    var baseParams = buildParams();
+    if (!baseParams.prompt) {
       showStatus('请先输入正向提示词', 'warning');
       $('prompt').focus();
       return;
     }
-    currentImageParams = params;
+
+    var seeds = deriveSeeds(baseParams, numImages);
+    results = [];
+    for (var i = 0; i < numImages; i++) {
+      var p = Object.assign({}, baseParams);
+      if (seeds) p.seed = seeds[i];
+      results.push({ params: p, status: 'loading' });
+    }
+
+    currentImageParams = Object.assign({}, baseParams);
+    currentImageParams.numImages = numImages;
     savePrefs();
 
     $('emptyState').classList.add('hidden');
-    $('aiImage').classList.add('hidden');
     $('imageStatus').classList.add('hidden');
     $('copyParamsButton').classList.add('hidden');
     $('downloadButton').classList.add('hidden');
+    $('metaRow').classList.add('hidden');
+    $('allParamsContainer').classList.add('hidden');
+
+    doneCount = 0;
+    failCount = 0;
+    renderGrid();
 
     setGenerating(true);
-    var startTime = performance.now();
+    var startTime = genStart = performance.now();
+    startTimer();
 
-    try {
-      var response = await fetch('/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'image/*' },
-        body: JSON.stringify(params)
-      });
+    // 并发池调度（同时最多 2 张在途，自动错峰 + 限流重试）
+    await runPool(results.length, MAX_CONCURRENCY, runOne);
 
-      if (!response.ok) {
-        var msg = '生成失败（HTTP ' + response.status + '）';
-        try {
-          var errData = await response.json();
-          if (errData && errData.error) msg = errData.error;
-          if (errData && errData.details) console.warn('[text2img] 服务端详情:', errData.details);
-        } catch (e) { /* 非 JSON 错误体 */ }
-        throw new Error(msg);
-      }
+    stopTimer();
+    setGenerating(false);
+    var generationTime = ((performance.now() - startTime) / 1000).toFixed(1);
 
-      var blob = await response.blob();
-      if (!blob.type.startsWith('image/')) {
-        throw new Error('服务端返回的不是图像数据');
-      }
-      var generationTime = ((performance.now() - startTime) / 1000).toFixed(1);
-
-      // 用 Object URL 展示（内存占用远低于 base64），并释放上一张
-      if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
-      lastObjectUrl = URL.createObjectURL(blob);
-      lastBlob = blob;
-
-      var img = $('aiImage');
-      img.onload = function () {
-        $('generationTime').textContent = generationTime + ' 秒';
-        $('usedModel').textContent = currentModel.name;
-        $('imageMeta').textContent = blob.type === 'image/png' ? 'PNG' : 'JPEG';
-        $('metaRow').classList.remove('hidden');
-        updateParamsDisplay(params);
-        $('copyParamsButton').classList.remove('hidden');
-        $('downloadButton').classList.remove('hidden');
-        showStatus('生成成功', 'success');
-      };
-      img.onerror = function () {
-        showStatus('图像加载失败，请重试', 'error');
-        $('emptyState').classList.remove('hidden');
-      };
-      img.src = lastObjectUrl;
-      img.classList.remove('hidden');
-    } catch (error) {
-      console.error('生成图像错误:', error);
-      showStatus(error.message || '生成失败', 'error');
-      $('emptyState').classList.remove('hidden');
-    } finally {
-      setGenerating(false);
+    if (doneCount > 0) {
+      $('generationTime').textContent = generationTime + ' 秒';
+      $('usedModel').textContent = currentModel.name;
+      updateBatchMeta();
+      $('metaRow').classList.remove('hidden');
+      updateParamsDisplay(currentImageParams);
+      $('copyParamsButton').classList.remove('hidden');
+      $('downloadButton').classList.remove('hidden');
+      $('downloadText').textContent = doneCount > 1 ? '下载全部' : '下载图像';
     }
+    refreshBatchStatus();
   }
 
   $('submitButton').addEventListener('click', generate);
 
-  // Ctrl/Cmd + Enter 快捷键
+  // ============ 灯箱（大图查看） ============
+  function doneIndices() {
+    var a = [];
+    results.forEach(function (r, i) { if (r.status === 'done') a.push(i); });
+    return a;
+  }
+
+  function openLightbox(i) {
+    var r = results[i];
+    if (!r || r.status !== 'done') return;
+    lbIndex = i;
+    $('lbImage').src = r.url;
+    var list = doneIndices();
+    $('lbCaption').textContent = list.length > 1 ? (list.indexOf(i) + 1) + ' / ' + list.length : '';
+    var multi = list.length > 1;
+    $('lbPrev').classList.toggle('hidden', !multi);
+    $('lbNext').classList.toggle('hidden', !multi);
+    $('lightbox').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeLightbox() {
+    $('lightbox').classList.add('hidden');
+    $('lbImage').src = '';
+    document.body.style.overflow = '';
+  }
+
+  function lbStep(d) {
+    var list = doneIndices();
+    if (list.length < 2) return;
+    var pos = list.indexOf(lbIndex);
+    if (pos === -1) pos = 0;
+    openLightbox(list[(pos + d + list.length) % list.length]);
+  }
+
+  $('lbClose').addEventListener('click', closeLightbox);
+  $('lightbox').addEventListener('click', function (e) {
+    if (e.target === this) closeLightbox();
+  });
+  $('lbPrev').addEventListener('click', function () { lbStep(-1); });
+  $('lbNext').addEventListener('click', function () { lbStep(1); });
+  $('lbDownload').addEventListener('click', function () { downloadResult(lbIndex); });
+
+  // 快捷键：Ctrl/Cmd + Enter 生成；灯箱打开时 ← → 切换、Esc 关闭
   document.addEventListener('keydown', function (e) {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault();
-      generate();
+    if ($('lightbox').classList.contains('hidden')) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        generate();
+      }
+      return;
     }
+    if (e.key === 'Escape') closeLightbox();
+    else if (e.key === 'ArrowLeft') lbStep(-1);
+    else if (e.key === 'ArrowRight') lbStep(1);
   });
 
   // ============ 参数展示 / 复制 ============
@@ -1016,21 +1539,37 @@ document.addEventListener('DOMContentLoaded', function () {
       .catch(function () { showStatus('复制失败，请手动复制', 'error'); });
   });
 
-  // ============ 下载 ============
-  $('downloadButton').addEventListener('click', function () {
-    if (!lastBlob) { showStatus('没有可下载的图像', 'error'); return; }
-    var ext = lastBlob.type === 'image/png' ? 'png'
-      : (lastBlob.type === 'image/jpg' || lastBlob.type === 'image/jpeg') ? 'jpg' : 'img';
-    var url = URL.createObjectURL(lastBlob);
+  // ============ 下载（单张 / 全部） ============
+  function downloadResult(i) {
+    var r = results[i];
+    if (!r || r.status !== 'done' || !r.blob) { showStatus('没有可下载的图像', 'error'); return; }
+    var ext = r.blob.type === 'image/png' ? 'png'
+      : (r.blob.type === 'image/jpg' || r.blob.type === 'image/jpeg') ? 'jpg' : 'img';
+    var url = r.url || URL.createObjectURL(r.blob);
     var link = document.createElement('a');
     var timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     link.href = url;
-    link.download = currentModel.id + '-' + timestamp + '.' + ext;
+    link.download = currentModel.id + '-' + timestamp +
+      (results.length > 1 ? '-' + (i + 1) : '') + '.' + ext;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-    showStatus('图像已开始下载', 'success');
+    if (!r.url) setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  $('downloadButton').addEventListener('click', function () {
+    var list = doneIndices();
+    if (list.length === 0) { showStatus('没有可下载的图像', 'error'); return; }
+    if (list.length === 1) {
+      downloadResult(list[0]);
+      showStatus('图像已开始下载', 'success');
+      return;
+    }
+    // 多张时错开触发，避免浏览器拦截连发下载
+    list.forEach(function (i, k) {
+      setTimeout(function () { downloadResult(i); }, k * 350);
+    });
+    showStatus('已开始下载 ' + list.length + ' 张图像', 'success');
   });
 });
 </script>
